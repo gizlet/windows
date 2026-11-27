@@ -40,7 +40,7 @@ On Windows, `scripts/ci.ps1` runs what CI runs: every test, an unsigned installe
 | `tests/Gizlet.Core.Tests/` | Unit tests, including the ext4 grow against gizlet/os's layout and the release manifest the Launcher accepts |
 | `tests/Gizlet.Windows.Tests/` | Tests against the real Windows APIs, skipped elsewhere |
 | `installer/` | The Inno Setup script |
-| `scripts/` | `ci.ps1`, `package.ps1`, `install-inno.ps1`, `check-imports.ps1`, `ui-check.ps1` |
+| `scripts/` | `ci.ps1`, `package.ps1`, `install-inno.ps1`, `check-imports.ps1`, `ui-check.ps1`, `update-rehearsal.ps1` |
 | `tools/Gizlet.StoreCheck/` | The Store end-to-end check |
 | `devops/` | The release script, signing setup, the update key's public half and the encrypted release secrets |
 | `docs/releases/` | Each release's notes, `<tag>.en.md` and `<tag>.zh-CN.md`, shown in the Launcher's update banner |
@@ -55,6 +55,7 @@ Follows the [gizlet/.github](https://github.com/gizlet/.github) setup. Pull requ
 | `codex-review.yml` | The `Codex Code Review` check, with review guidance for card-write targets, the UAC boundary, update verification and profile data. GitHub-hosted. |
 | `ci.yml` | The `CI` check: `scripts/ci.ps1` at the tested commit, with a read-only token and no secrets. It installs the Launcher, opens its real window, walks every page in English and light and again in Simplified Chinese and dark (`scripts/ui-check.ps1`), and keeps the screenshots as the `ui-screenshots` artifact. |
 | `release.yml` | Releases, below. |
+| `update-rehearsal.yml` | On `main`, weekly and on demand, on a fresh GitHub-hosted runner: builds v0.0.1 and v0.0.2 signed with a throwaway Authenticode certificate trusted only there, and with a throwaway update key (`package.ps1 -TestUpdateKey`, which releases never pass). It installs v0.0.1 with real data (The Little Prince from the Store, two profiles, a favourite and a save) and leaves it running. It then publishes v0.0.2 to a local server and waits for the banner in the next 120-second poll. It clicks "Update and restart" and checks that v0.0.2 reopens with the apps, profiles, settings and saves kept (`scripts/update-rehearsal.ps1`). No release credentials. Not a pull-request check. |
 | `store-e2e.yml` | On `main`, daily and on demand: `tools/Gizlet.StoreCheck` searches the live Store, installs The Little Prince, opens it in one of two profiles with the Launcher's environment (Mesa's software OpenGL on the GPU-less runner), plays its saving replay, and checks that the saves and favourites stay with that profile through an uninstall and a reinstall. Not a pull-request check. |
 
 Builds run on the runner the `RUNNERS` organization variable maps to `windows-x64`, falling back to GitHub's `windows-2025` runner until that key exists. Releases, which decrypt the signing credentials, run on `RUNNERS['windows-x64-release']`, a self-hosted runner that never builds pull requests, or a fresh GitHub-hosted runner without it. Comment-triggered workflows run their copy on `main`, so a pull request that changes them is tested by the old ones.

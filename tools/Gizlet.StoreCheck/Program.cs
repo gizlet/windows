@@ -23,7 +23,11 @@ var language = Arg("--lang") ?? "en";
 if (language is not ("en" or "zh-CN")) throw new ArgumentException("--lang is en or zh-CN");
 var env = args.Select((a, i) => (a, i)).Where(p => p.a == "--env" && p.i + 1 < args.Length).Select(p => args[p.i + 1].Split('=', 2)).ToList();
 
-var root = Path.Combine(Path.GetTempPath(), "gizlet-store-check-" + Guid.NewGuid().ToString("N"));
+// --prefix DIR keeps the data in DIR (a Launcher's GIZLET_PREFIX) instead of a temporary folder;
+// --install-only stops once the app is installed, favourited in profile A and A has a save.
+var given = Arg("--prefix");
+var installOnly = args.Contains("--install-only");
+var root = given ?? Path.Combine(Path.GetTempPath(), "gizlet-store-check-" + Guid.NewGuid().ToString("N"));
 var layout = new DataLayout(root);
 var target = WindowsTarget.Current;
 using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
@@ -57,6 +61,14 @@ if (gl is not null)
 // Launch in profile A -> save.
 profiles.SaveSettings(a.Id, profiles.Settings(a.Id) with { Favorites = [app.Id] });
 var savesA = profiles.SaveDirectory(a.Id, app.Id);
+if (installOnly)
+{
+    File.WriteAllText(Path.Combine(savesA, "rehearsal-save.txt"), "kept");
+    profiles.SaveSettings(b.Id, profiles.Settings(b.Id) with { Language = "zh-CN" });
+    profiles.Switch(a.Id);
+    Step($"installed into {root}: profiles A ({a.Id}) and B ({b.Id}), {app.Id} favourited and saved in A");
+    return 0;
+}
 var start = AppLaunch.StartInfo(app, a.Id, savesA, language);
 foreach (var pair in env) start.Environment[pair[0]] = pair[1];
 start.RedirectStandardOutput = start.RedirectStandardError = true;
@@ -85,11 +97,14 @@ file = await store.DownloadAsync(install.Package!, layout.Downloads);
 library.Install(file, new AppOrigin(install.Repo, install.RepositoryId, install.Tag), _ => false);
 Check(library.Find(app.Id) is not null && profiles.Settings(a.Id).Favorites.Contains(app.Id), "reinstalling keeps the favourite and the saves");
 Step("Store end to end passed");
-try
+if (given is null)
 {
-    Directory.Delete(root, recursive: true);
-}
-catch (IOException)
-{
+    try
+    {
+        Directory.Delete(root, recursive: true);
+    }
+    catch (IOException)
+    {
+    }
 }
 return 0;

@@ -15,7 +15,10 @@
 param(
     [Parameter(Mandatory)][string]$Version,
     [ValidateSet('x64', 'arm64')][string]$Arch = 'x64',
-    [string]$Output = 'artifacts'
+    [string]$Output = 'artifacts',
+    # Rehearsals only: the base64 of a throwaway ssh-ed25519 update key the Launcher trusts instead
+    # of the release key. The Release workflow never passes it.
+    [string]$TestUpdateKey
 )
 $ErrorActionPreference = 'Stop'
 Set-Location (Split-Path -Parent $PSScriptRoot)
@@ -34,8 +37,15 @@ function Invoke([string]$file, [string[]]$arguments) {
     if ($LASTEXITCODE -ne 0) { throw "$file exited with $LASTEXITCODE" }
 }
 
-Invoke dotnet @('publish', 'src/Gizlet.Launcher/Gizlet.Launcher.csproj', '--configuration', 'Release', '--runtime', $rid,
+$launcherArgs = @('publish', 'src/Gizlet.Launcher/Gizlet.Launcher.csproj', '--configuration', 'Release', '--runtime', $rid,
     '--self-contained', 'true', "-p:Version=$Version", "-p:Platform=$Arch", '-p:PublishReadyToRun=true', '--output', $publish)
+if ($TestUpdateKey) {
+    if ($TestUpdateKey -notmatch '^AAAAC3NzaC1lZDI1NTE5[A-Za-z0-9+/]{40,}$') { throw 'TestUpdateKey is not an ssh-ed25519 public key blob' }
+    if ($env:GITHUB_WORKFLOW -eq 'Release') { throw 'A release never trusts a test update key' }
+    Write-Warning 'Rehearsal build: trusting a test update key'
+    $launcherArgs += "-p:GizletTestUpdateKey=$TestUpdateKey"
+}
+Invoke dotnet $launcherArgs
 
 # The helper runs elevated from this user-writable folder, so it is one native executable with
 # nothing beside it to replace, and only System32 DLLs (Windows' KnownDLLs and API sets) load into it.
@@ -64,9 +74,12 @@ if ($signArgs) {
 $timestamp = if ($env:GIZLET_TIMESTAMP_URL) { $env:GIZLET_TIMESTAMP_URL } else { 'http://timestamp.digicert.com' }
 $signLine = if ($signtool) { "`"$signtool`" sign /fd SHA256 /tr $timestamp /td SHA256 $signArgs" } else { $null }
 
+# GIZLET_SIGNTOOL_ARGS as signtool's own arguments: words, or "quoted words" kept whole.
+$signArgList = @([regex]::Matches("$signArgs", '"([^"]*)"|(\S+)') | ForEach-Object { if ($_.Groups[1].Success) { $_.Groups[1].Value } else { $_.Groups[2].Value } })
+
 function Sign([string]$file) {
-    if (-not $signLine) { return }
-    Invoke cmd.exe @('/d', '/s', '/c', "`"$signLine `"$file`"`"")
+    if (-not $signtool) { return }
+    Invoke $signtool (@('sign', '/fd', 'SHA256', '/tr', $timestamp, '/td', 'SHA256') + $signArgList + @($file))
 }
 
 function Assert-Signed([string]$file) {
@@ -88,7 +101,8 @@ $iscc = @(
 ) | Where-Object { Test-Path $_ } | Select-Object -First 1
 if (-not $iscc) { throw 'Inno Setup 7 (ISCC.exe) not found; run scripts/install-inno.ps1' }
 $isccArgs = @("/DAppVersion=$Version", "/DArch=$Arch", "/DSource=$publish", "/DOutput=$installerDir", '/Qp')
-if ($signLine) { $isccArgs += @('/DSign=1', "/Ssign=$signLine `$f") }
+# ISCC reads its command line without backslash escapes: quotes inside the sign command are $q.
+if ($signLine) { $isccArgs += @('/DSign=1', ('/Ssign=' + $signLine.Replace('"', '$q') + ' $f')) }
 Invoke $iscc ($isccArgs + @('installer/GizletLauncher.iss'))
 $installer = Join-Path $installerDir "GizletSetup-$Version-$Arch.exe"
 if (-not (Test-Path $installer)) { throw "$installer was not built" }

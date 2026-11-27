@@ -26,6 +26,11 @@
     <PackageReference Include="Microsoft.WindowsAppSDK" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" />
   </ItemGroup>
+  <!-- Rehearsals only (scripts/update-rehearsal.ps1): trust a throwaway update key instead of
+       devops/update-key.pub. Releases never set it. -->
+  <ItemGroup Condition="'$(GizletTestUpdateKey)' != ''">
+    <AssemblyMetadata Include="GizletTestUpdateKey" Value="$(GizletTestUpdateKey)" />
+  </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../Gizlet.Windows/Gizlet.Windows.csproj" />
   </ItemGroup>

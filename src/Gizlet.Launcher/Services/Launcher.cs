@@ -14,8 +14,15 @@ namespace Gizlet.Launcher.Services;
 /// <summary>Everything the pages share. Created once, on the UI thread.</summary>
 sealed class Launcher
 {
-    /// <summary>The key the Release workflow signs <c>windows/update.json</c> with.</summary>
-    public const string UpdateKey = UpdateManifest.TrustedKey;
+    /// <summary>
+    /// The key <c>windows/update.json</c> must be signed with: the Release workflow's, unless this is
+    /// a rehearsal build given a throwaway one (<c>-p:GizletTestUpdateKey</c>).
+    /// </summary>
+    public static string UpdateKey { get; } =
+        typeof(Launcher).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
+            .FirstOrDefault(a => a.Key == "GizletTestUpdateKey")?.Value is { Length: > 0 } test
+            ? $"ssh-ed25519 {test}"
+            : UpdateManifest.TrustedKey;
 
     public Launcher()
     {
