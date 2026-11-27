@@ -1,0 +1,69 @@
+name: Update rehearsal
+
+# The in-app update, end to end, on a fresh Windows runner (scripts/update-rehearsal.ps1): an old
+# Launcher, running with real data, finds a newly published version in its next 120-second poll,
+# downloads and checks it, installs it and opens again with everything kept. Signed with a
+# throwaway Authenticode certificate trusted only on this runner, and a throwaway update key built
+# into these test builds only. No release credentials. Runs on main, weekly and on demand.
+
+on:
+  push:
+    branches: [main, codex/update-rehearsal]
+  schedule:
+    - cron: '41 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rehearse:
+    name: Old Launcher updates itself (Windows x64)
+    runs-on: windows-2025
+    timeout-minutes: 60
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_NOLOGO: '1'
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          global-json-file: global.json
+      - name: Throwaway signing certificate and update key
+        shell: pwsh
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP 'rehearsal-keys'
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject 'CN=Gizlet Update Rehearsal' -CertStoreLocation Cert:\CurrentUser\My -NotAfter (Get-Date).AddDays(2)
+          $password = [guid]::NewGuid().ToString('N')
+          Write-Host "::add-mask::$password"
+          Export-PfxCertificate -Cert $cert -FilePath "$dir/sign.pfx" -Password (ConvertTo-SecureString $password -AsPlainText -Force) | Out-Null
+          Export-Certificate -Cert $cert -FilePath "$dir/sign.cer" | Out-Null
+          # Trusted on this ephemeral runner only, as a real publisher's chain is everywhere.
+          Import-Certificate -FilePath "$dir/sign.cer" -CertStoreLocation Cert:\LocalMachine\Root | Out-Null
+          Import-Certificate -FilePath "$dir/sign.cer" -CertStoreLocation Cert:\LocalMachine\TrustedPublisher | Out-Null
+          ssh-keygen -q -t ed25519 -N '""' -C rehearsal -f "$dir/update"
+          if (-not (Test-Path "$dir/update")) { ssh-keygen -q -t ed25519 -N '' -C rehearsal -f "$dir/update" }
+          $blob = (Get-Content "$dir/update.pub").Split(' ')[1]
+          Add-Content $env:GITHUB_ENV "GIZLET_SIGNTOOL_ARGS=/f `"$dir\sign.pfx`" /p $password"
+          Add-Content $env:GITHUB_ENV "REHEARSAL_KEY=$dir\update"
+          Add-Content $env:GITHUB_ENV "REHEARSAL_BLOB=$blob"
+      - name: Build the old and the new version
+        shell: pwsh
+        run: |
+          ./scripts/install-inno.ps1
+          $old = ./scripts/package.ps1 -Version 0.0.1 -Arch x64 -Output "$env:RUNNER_TEMP/old" -TestUpdateKey $env:REHEARSAL_BLOB | Select-Object -Last 1
+          $new = ./scripts/package.ps1 -Version 0.0.2 -Arch x64 -Output "$env:RUNNER_TEMP/new" -TestUpdateKey $env:REHEARSAL_BLOB | Select-Object -Last 1
+          Add-Content $env:GITHUB_ENV "OLD_INSTALLER=$old"
+          Add-Content $env:GITHUB_ENV "NEW_INSTALLER=$new"
+      - name: Rehearse the update
+        shell: pwsh
+        run: ./scripts/update-rehearsal.ps1 -Old $env:OLD_INSTALLER -New $env:NEW_INSTALLER -NewVersion 0.0.2 -Key $env:REHEARSAL_KEY -Output "$env:RUNNER_TEMP/screens"
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: update-rehearsal
+          path: ${{ runner.temp }}/screens
+          if-no-files-found: ignore

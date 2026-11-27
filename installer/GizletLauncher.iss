@@ -60,7 +60,7 @@ ShowLanguageDialog=auto
 CloseApplications=no
 SetupMutex=GizletLauncherSetup
 #ifdef Sign
-SignTool=sign $f
+SignTool=sign
 SignedUninstaller=yes
 #endif
 
