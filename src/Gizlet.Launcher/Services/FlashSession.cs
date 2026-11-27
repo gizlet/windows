@@ -154,7 +154,8 @@ sealed class FlashSession(Launcher launcher)
     /// <summary>
     /// Selects the Panel 4 overlay on a card just written: copies <c>r36s-v30-panel4.dtbo</c> to
     /// <c>mipi-panel.dtbo</c> on its boot partition, as gizlet/os's writer does. Runs as the user,
-    /// on the FAT volume named GIZLETBOOT of the same device (path, serial and size) that was written.
+    /// on the FAT volume named GIZLETBOOT of the same device (path, serial and size) holding the same
+    /// card (media change count and the reader's arrival time unchanged since it was confirmed).
     /// </summary>
     public static Task ConfigurePanel4Async(DiskIdentity written, CancellationToken cancellationToken) => Task.Run(async () =>
     {
@@ -164,6 +165,10 @@ sealed class FlashSession(Launcher launcher)
             var disk = DiskEnumerator.List().FirstOrDefault(d =>
                 string.Equals(d.DevicePath, written.DevicePath, StringComparison.OrdinalIgnoreCase)
                 && d.Serial == written.Serial && d.Size == written.Size);
+            if (disk is not null && (disk.MediaChangeCount != written.MediaChangeCount || disk.ArrivedAt != written.ArrivedAt))
+            {
+                throw new GizletException(GizletError.DiskChanged, "the card changed before the screen was set up");
+            }
             var boot = disk?.Volumes.FirstOrDefault(v => string.Equals(v.Label, "GIZLETBOOT", StringComparison.OrdinalIgnoreCase)
                 && v.FileSystem is { } fs && fs.StartsWith("FAT", StringComparison.OrdinalIgnoreCase));
             if (disk is not null && DiskRules.Refusal(disk) is null && boot is not null)
