@@ -28,7 +28,7 @@ public sealed record UpdateManifest
     /// The public half of the update signing key, the same as <c>devops/update-key.pub</c>. Its
     /// private half is only in <c>devops/secrets/release.enc.yaml</c>, for the Release workflow.
     /// </summary>
-    public const string TrustedKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOwT97syJvu38qFyVCtvTnsjP6VU17q9gdTt8YCy8y2c gizlet-windows-update";
+    public const string TrustedKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOufi6KcTEdzzFcJKebLnrIPheleBWHLSz+6wrmqIB2F gizlet-windows-update";
 
     public int Schema { get; init; }
     public string Name { get; init; } = "";
