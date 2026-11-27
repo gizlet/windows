@@ -25,7 +25,7 @@ function Open-Launcher {
         Start-Sleep -Milliseconds 500
         if ($process.HasExited) { Show-Log; throw "The Launcher exited with $($process.ExitCode) before showing a window" }
         $process.Refresh()
-        if ($process.MainWindowHandle -ne 0) { Start-Sleep -Seconds 6; return $process }
+        if ($process.MainWindowHandle -ne [IntPtr]::Zero) { Start-Sleep -Seconds 6; return $process }
     }
     Show-Log
     throw 'The Launcher showed no window within 60 seconds'
@@ -36,9 +36,19 @@ function Show-Log {
     if (Test-Path $log) { Write-Host '--- launcher.log'; Get-Content $log | Select-Object -Last 40 | Write-Host }
 }
 
+# The window handle, read again from the running process: a cached Process object goes stale.
+function Window($process) {
+    for ($i = 0; $i -lt 40; $i++) {
+        if ($process.HasExited) { Show-Log; throw "The Launcher exited with $($process.ExitCode)" }
+        $handle = (Get-Process -Id $process.Id -ErrorAction SilentlyContinue).MainWindowHandle
+        if ($handle -and [IntPtr]$handle -ne [IntPtr]::Zero) { return [IntPtr]$handle }
+        Start-Sleep -Milliseconds 500
+    }
+    throw 'The Launcher has no visible window'
+}
+
 function Snap($process, [string]$name) {
-    if ($process.HasExited) { Show-Log; throw "The Launcher exited with $($process.ExitCode) on $name" }
-    $window = $process.MainWindowHandle
+    $window = Window $process
     [void][Gizlet.Win]::ShowWindow($window, 9)
     [void][Gizlet.Win]::SetForegroundWindow($window)
     Start-Sleep -Milliseconds 800
@@ -55,7 +65,7 @@ function Snap($process, [string]$name) {
 }
 
 function Press($process, [string]$keys, [int]$wait = 4) {
-    [void][Gizlet.Win]::SetForegroundWindow($process.MainWindowHandle)
+    [void][Gizlet.Win]::SetForegroundWindow((Window $process))
     Start-Sleep -Milliseconds 400
     [Windows.Forms.SendKeys]::SendWait($keys)
     Start-Sleep -Seconds $wait
