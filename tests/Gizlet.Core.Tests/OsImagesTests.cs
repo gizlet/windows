@@ -8,10 +8,11 @@ namespace Gizlet.Core.Tests;
 /// <summary>Official images come only from the Gizlet server the API runs on.</summary>
 public class OsImagesTests
 {
-    sealed class Server(Func<Uri, HttpResponseMessage?> answer) : HttpMessageHandler
+    sealed class Server(Func<Uri, HttpResponseMessage?> answer, bool refuseRanges = false) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
+            if (refuseRanges && request.Headers.Range is not null) return Task.FromResult(new HttpResponseMessage(HttpStatusCode.RequestedRangeNotSatisfiable) { RequestMessage = request });
             var response = answer(request.RequestUri!) ?? new HttpResponseMessage(HttpStatusCode.NotFound);
             response.RequestMessage ??= request;
             return Task.FromResult(response);
@@ -62,7 +63,7 @@ public class OsImagesTests
     }
 
     /// <summary>A release that signs its image's digest, served by a stub Gizlet server.</summary>
-    static OsImages Signed(string directory, string sums, byte[]? image = null)
+    static OsImages Signed(string directory, string sums, byte[]? image = null, bool refuseRanges = false)
     {
         var server = new Server(uri => uri.AbsolutePath switch
         {
@@ -72,7 +73,7 @@ public class OsImagesTests
             "/assets/releases/v9.9.9/boards/gameconsole/r36s/SHA256SUMS" => Ok(Encoding.ASCII.GetBytes(sums)),
             "/assets/releases/v9.9.9/boards/gameconsole/r36s/gizlet-os-r36s.img.gz" => Ok(image ?? Fixtures.Bytes("os-v9.9.9-image.img.gz")),
             _ => null,
-        });
+        }, refuseRanges);
         return new OsImages(new HttpClient(server), SshPublicKey.Parse(Fixtures.Text("test-os-key.pub")), directory, new Uri("https://gizlet.io/api/"));
     }
 
@@ -106,5 +107,19 @@ public class OsImagesTests
         images = Signed(again.Path, Sums(Fixtures.Bytes("os-v9.9.9-image.img.gz")), forged);
         error = await Assert.ThrowsAsync<GizletException>(() => images.DownloadAsync(release));
         Assert.Equal(GizletError.ImageBadChecksum, error.Error);
+    }
+
+    [Fact]
+    public async Task StartsAgainWhenAPartialDownloadIsAlreadyComplete()
+    {
+        using var temp = new TempDirectory();
+        var image = Fixtures.Bytes("os-v9.9.9-image.img.gz");
+        var images = Signed(temp.Path, Sums(image), refuseRanges: true);
+        var release = await images.LatestAsync();
+        // Cut short after the last byte, before the rename: asking for the rest answers 416.
+        Directory.CreateDirectory(Path.Combine(temp.Path, "v9.9.9"));
+        File.WriteAllBytes(Path.Combine(temp.Path, "v9.9.9", "gizlet-os-r36s.img.gz.partial"), image);
+        var card = await images.DownloadAsync(release);
+        Assert.Equal(16 * 4096, card.Size);
     }
 }
