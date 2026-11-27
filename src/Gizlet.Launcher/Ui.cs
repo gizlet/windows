@@ -11,7 +11,18 @@ namespace Gizlet.Launcher;
 /// <summary>Small builders for a code-only WinUI interface, using the Fluent theme resources.</summary>
 static class Ui
 {
+    /// <summary>A style or other app-wide resource. Theme brushes go through <see cref="Themed{T}"/>.</summary>
     public static T Resource<T>(string key) => (T)Application.Current.Resources[key];
+
+    const string Presentation = "xmlns=\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\"";
+
+    /// <summary>
+    /// An element whose brushes are {ThemeResource} references, so they follow the light or dark
+    /// theme of the window it is shown in and change with it. A theme brush cannot be read from the
+    /// application's resources in code.
+    /// </summary>
+    static T Themed<T>(string element, string brushes) where T : DependencyObject =>
+        (T)Microsoft.UI.Xaml.Markup.XamlReader.Load($"<{element} {Presentation} {brushes} />");
 
     public static TextBlock Text(string text, string style = "BodyTextBlockStyle", bool wrap = true) => new()
     {
@@ -23,8 +34,11 @@ static class Ui
 
     public static TextBlock Secondary(string text, string style = "CaptionTextBlockStyle", bool wrap = true)
     {
-        var block = Text(text, style, wrap);
-        block.Foreground = Resource<Brush>("TextFillColorSecondaryBrush");
+        var block = Themed<TextBlock>("TextBlock", "Foreground=\"{ThemeResource TextFillColorSecondaryBrush}\"");
+        block.Text = text;
+        block.Style = Resource<Style>(style);
+        block.TextWrapping = wrap ? TextWrapping.WrapWholeWords : TextWrapping.NoWrap;
+        block.TextTrimming = wrap ? TextTrimming.None : TextTrimming.CharacterEllipsis;
         return block;
     }
 
@@ -55,15 +69,15 @@ static class Ui
     }
 
     /// <summary>A Fluent settings card: a rounded, raised surface.</summary>
-    public static Border Card(UIElement child, double padding = 16) => new()
+    public static Border Card(UIElement child, double padding = 16)
     {
-        Child = child,
-        Padding = new Thickness(padding),
-        CornerRadius = new CornerRadius(8),
-        BorderThickness = new Thickness(1),
-        Background = Resource<Brush>("CardBackgroundFillColorDefaultBrush"),
-        BorderBrush = Resource<Brush>("CardStrokeColorDefaultBrush"),
-    };
+        var card = Themed<Border>("Border", "Background=\"{ThemeResource CardBackgroundFillColorDefaultBrush}\" BorderBrush=\"{ThemeResource CardStrokeColorDefaultBrush}\"");
+        card.Child = child;
+        card.Padding = new Thickness(padding);
+        card.CornerRadius = new CornerRadius(8);
+        card.BorderThickness = new Thickness(1);
+        return card;
+    }
 
     public static Button Button(string text, Action click, string? glyph = null, bool accent = false)
     {
@@ -120,14 +134,18 @@ static class Ui
         return border;
     }
 
-    public static Border Badge(string text, bool accent = false) => new()
+    public static Border Badge(string text, bool accent = false)
     {
-        Child = new TextBlock { Text = text, FontSize = 12, Foreground = accent ? Resource<Brush>("TextOnAccentFillColorPrimaryBrush") : Resource<Brush>("TextFillColorPrimaryBrush") },
-        Padding = new Thickness(8, 2, 8, 2),
-        CornerRadius = new CornerRadius(10),
-        Background = accent ? Resource<Brush>("AccentFillColorDefaultBrush") : Resource<Brush>("ControlFillColorSecondaryBrush"),
-        VerticalAlignment = VerticalAlignment.Center,
-    };
+        var label = Themed<TextBlock>("TextBlock", $"Foreground=\"{{ThemeResource {(accent ? "TextOnAccentFillColorPrimaryBrush" : "TextFillColorPrimaryBrush")}}}\"");
+        label.Text = text;
+        label.FontSize = 12;
+        var badge = Themed<Border>("Border", $"Background=\"{{ThemeResource {(accent ? "AccentFillColorDefaultBrush" : "ControlFillColorSecondaryBrush")}}}\"");
+        badge.Child = label;
+        badge.Padding = new Thickness(8, 2, 8, 2);
+        badge.CornerRadius = new CornerRadius(10);
+        badge.VerticalAlignment = VerticalAlignment.Center;
+        return badge;
+    }
 
     public static ScrollViewer Scroll(UIElement content) => new()
     {
