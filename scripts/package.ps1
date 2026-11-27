@@ -74,9 +74,12 @@ if ($signArgs) {
 $timestamp = if ($env:GIZLET_TIMESTAMP_URL) { $env:GIZLET_TIMESTAMP_URL } else { 'http://timestamp.digicert.com' }
 $signLine = if ($signtool) { "`"$signtool`" sign /fd SHA256 /tr $timestamp /td SHA256 $signArgs" } else { $null }
 
+# GIZLET_SIGNTOOL_ARGS as signtool's own arguments: words, or "quoted words" kept whole.
+$signArgList = @([regex]::Matches("$signArgs", '"([^"]*)"|(\S+)') | ForEach-Object { if ($_.Groups[1].Success) { $_.Groups[1].Value } else { $_.Groups[2].Value } })
+
 function Sign([string]$file) {
-    if (-not $signLine) { return }
-    Invoke cmd.exe @('/d', '/s', '/c', "`"$signLine `"$file`"`"")
+    if (-not $signtool) { return }
+    Invoke $signtool (@('sign', '/fd', 'SHA256', '/tr', $timestamp, '/td', 'SHA256') + $signArgList + @($file))
 }
 
 function Assert-Signed([string]$file) {
