@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "tag": "v0.4.4",
+  "commit": "50dbc4d13d46105c35723cbfb9b0e5e44fb215b5",
+  "boards": {
+    "gameconsole": {
+      "r36s": {
+        "image": {
+          "path": "boards/gameconsole/r36s/gizlet-os-r36s.img.gz",
+          "checksum": "boards/gameconsole/r36s/SHA256SUMS"
+        },
+        "flash_scripts": {
+          "macos_linux": "boards/gameconsole/r36s/flash.sh",
+          "windows": "boards/gameconsole/r36s/flash.ps1"
+        }
+      }
+    }
+  },
+  "runtime": {
+    "arm64": "runtime/gizlet-runtime-1.sqfs"
+  },
+  "launcher": {
+    "arm64": "launcher/gizlet-launcher-0.4.4.gizlet"
+  },
+  "ota": {
+    "protocol": 2,
+    "arch": "aarch64",
+    "runtime_abi": 1,
+    "runtime": {
+      "path": "runtime/gizlet-runtime-1.sqfs",
+      "sha256": "1b279093d10792845f7a0acd7a096090745f4c7deb6cd5ecc3fe1230c46fb82a",
+      "bytes": 63995904
+    },
+    "launcher": {
+      "path": "launcher/gizlet-launcher-0.4.4.gizlet",
+      "sha256": "0124f40098d6851684fb6995171aca9658bbef496f0906d583ad1a605072702f",
+      "bytes": 8151359
+    }
+  }
+}

@@ -6,4 +6,7 @@
   <ItemGroup>
     <InternalsVisibleTo Include="Gizlet.Core.Tests" />
   </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="BouncyCastle.Cryptography" />
+  </ItemGroup>
 </Project>
