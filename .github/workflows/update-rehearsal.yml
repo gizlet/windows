@@ -44,8 +44,9 @@ jobs:
           # Trusted on this ephemeral runner only, as a real publisher's chain is everywhere.
           Import-Certificate -FilePath "$dir/sign.cer" -CertStoreLocation Cert:\LocalMachine\Root | Out-Null
           Import-Certificate -FilePath "$dir/sign.cer" -CertStoreLocation Cert:\LocalMachine\TrustedPublisher | Out-Null
-          ssh-keygen -q -t ed25519 -N '""' -C rehearsal -f "$dir/update"
-          if (-not (Test-Path "$dir/update")) { ssh-keygen -q -t ed25519 -N '' -C rehearsal -f "$dir/update" }
+          # No passphrase: PowerShell 7 passes '' as an empty argument.
+          ssh-keygen -q -t ed25519 -N '' -C rehearsal -f "$dir/update"
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path "$dir/update")) { throw 'ssh-keygen failed' }
           $blob = (Get-Content "$dir/update.pub").Split(' ')[1]
           Add-Content $env:GITHUB_ENV "GIZLET_SIGNTOOL_ARGS=/f `"$dir\sign.pfx`" /p $password"
           Add-Content $env:GITHUB_ENV "REHEARSAL_KEY=$dir\update"
