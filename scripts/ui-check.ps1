@@ -17,10 +17,21 @@ public struct RECT { public int Left, Top, Right, Bottom; }
 [void][Gizlet.Win]::SetProcessDPIAware()
 New-Item -ItemType Directory -Force $Output | Out-Null
 $prefix = Join-Path ([IO.Path]::GetTempPath()) ('gizlet-ui-' + [guid]::NewGuid().ToString('N'))
-$env:GIZLET_PREFIX = $prefix
+# Only the Launchers this check starts get the temporary data folder; the caller's shell keeps its own.
+$savedPrefix = $env:GIZLET_PREFIX
+$started = [Collections.Generic.List[int]]::new()
+if (Get-Process -Name 'Gizlet.Launcher' -ErrorAction SilentlyContinue) {
+    throw 'Gizlet Launcher is already running; close it first (only one runs per Windows user).'
+}
 
 function Open-Launcher {
-    $process = Start-Process -FilePath $Launcher -PassThru
+    $env:GIZLET_PREFIX = $prefix
+    try {
+        $process = Start-Process -FilePath $Launcher -PassThru
+    } finally {
+        $env:GIZLET_PREFIX = $savedPrefix
+    }
+    $started.Add($process.Id)
     for ($i = 0; $i -lt 120; $i++) {
         Start-Sleep -Milliseconds 500
         if ($process.HasExited) { Show-Log; throw "The Launcher exited with $($process.ExitCode) before showing a window" }
@@ -91,7 +102,9 @@ try {
     Show-Log
     Write-Host 'UI check passed'
 } finally {
-    Get-Process -Name 'Gizlet.Launcher' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    # Only what this check started: never a Launcher the user has open.
+    foreach ($id in $started) { Stop-Process -Id $id -Force -ErrorAction SilentlyContinue }
+    $env:GIZLET_PREFIX = $savedPrefix
     Start-Sleep -Seconds 1
     Remove-Item -Recurse -Force $prefix -ErrorAction SilentlyContinue
 }
