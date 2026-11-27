@@ -14,6 +14,11 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
+    <!-- LOAD_LIBRARY_SEARCH_SYSTEM32 for every DLL loaded at start, such as bcrypt.dll, which is
+         not a KnownDLL: never the helper's own (user-writable) folder. -->
+    <LinkerArg Include="/DEPENDENTLOADFLAG:0x800" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="../Gizlet.Windows/Gizlet.Windows.csproj" />
   </ItemGroup>
 </Project>
