@@ -72,22 +72,22 @@ function Press($process, [string]$keys, [int]$wait = 4) {
 }
 
 try {
-    $launcher = Open-Launcher
-    Snap $launcher '1-apps'
-    Press $launcher '^2' 10; Snap $launcher '2-store'
-    Press $launcher '^3' 6; Snap $launcher '3-flash'
-    Press $launcher '^,' 4; Snap $launcher '4-settings'
-    Stop-Process -Id $launcher.Id -Force
+    $running = Open-Launcher
+    Snap $running '1-apps'
+    Press $running '^2' 10; Snap $running '2-store'
+    Press $running '^3' 6; Snap $running '3-flash'
+    Press $running '^,' 4; Snap $running '4-settings'
+    Stop-Process -Id $running.Id -Force
     Start-Sleep -Seconds 2
 
     # The same profile, now in Simplified Chinese and dark.
     $profile = Get-ChildItem (Join-Path $prefix 'profiles') -Directory | Where-Object { $_.Name -notlike '.*' } | Select-Object -First 1
     if (-not $profile) { throw 'The first start made no profile' }
     '{"language":"zh-CN","theme":"dark","favorites":[],"recent":[]}' | Set-Content -LiteralPath (Join-Path $profile.FullName 'settings.json') -Encoding utf8
-    $launcher = Open-Launcher
-    Snap $launcher '5-apps-zh-dark'
-    Press $launcher '^2' 10; Snap $launcher '6-store-zh-dark'
-    Stop-Process -Id $launcher.Id -Force
+    $running = Open-Launcher
+    Snap $running '5-apps-zh-dark'
+    Press $running '^2' 10; Snap $running '6-store-zh-dark'
+    Stop-Process -Id $running.Id -Force
     Show-Log
     Write-Host 'UI check passed'
 } finally {
