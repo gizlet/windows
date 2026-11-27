@@ -94,8 +94,12 @@ sealed partial class MainWindow : Window
     {
         if (!AppWindow.IsVisible)
         {
+            // 1180 x 780 at this monitor's scale, but never larger than its work area: centred on it.
             var scale = GetDpiForWindow(Handle) / 96.0;
-            AppWindow.Resize(new SizeInt32((int)(1180 * scale), (int)(780 * scale)));
+            var area = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Primary).WorkArea;
+            var width = Math.Min((int)(1180 * scale), area.Width);
+            var height = Math.Min((int)(780 * scale), area.Height);
+            AppWindow.MoveAndResize(new RectInt32(area.X + (area.Width - width) / 2, area.Y + (area.Height - height) / 2, width, height));
         }
         Activate();
         if (AppWindow.Presenter is OverlappedPresenter presenter)
