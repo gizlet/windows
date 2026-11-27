@@ -138,16 +138,16 @@ try {
 
     # 5. Replaced, reopened, data kept.
     Check ($running.WaitForExit(120000)) 'the old Launcher exits to install'
-    $new = $null
-    for ($i = 0; $i -lt 180 -and -not $new; $i++) {
+    $reopened = $null
+    for ($i = 0; $i -lt 180 -and -not $reopened; $i++) {
         Start-Sleep -Seconds 1
-        $new = Get-Process -Name 'Gizlet.Launcher' -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe } | Select-Object -First 1
+        $reopened = Get-Process -Name 'Gizlet.Launcher' -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe } | Select-Object -First 1
     }
-    Check ($null -ne $new) 'the installer opens the Launcher again'
+    Check ($null -ne $reopened) 'the installer opens the Launcher again'
     $newInstalled = Installed-Version
     Check ($newInstalled -like "$NewVersion*") "the installed Launcher is now $newInstalled"
     Check ((Get-AuthenticodeSignature $exe).Status -eq 'Valid') 'and validly signed'
-    $window = Window $new.Id
+    $window = Window $reopened.Id
     Start-Sleep -Seconds 8
     Check ($null -ne (Find $window 'The Little Prince')) 'the reopened Launcher lists The Little Prince among its apps'
     Snap $window '3-new-running'
