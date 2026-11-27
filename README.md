@@ -35,12 +35,12 @@ On Windows, `scripts/ci.ps1` runs what CI runs: every test, an unsigned installe
 | --- | --- |
 | `src/Gizlet.Core/` | Platform-independent logic: packages, library, profiles, Store, signatures, updates, card images |
 | `src/Gizlet.Windows/` | Win32: disks, raw disk access, volume locks, Authenticode, starting with Windows |
-| `src/Gizlet.Launcher/` | The WinUI 3 app, built in code without XAML files; `Strings.cs` holds every string in both languages |
+| `src/Gizlet.Launcher/` | The WinUI 3 app, built in code except `App.xaml`, which merges the Fluent control resources; `Strings.cs` holds every string in both languages |
 | `src/Gizlet.FlashHelper/` | The elevated card writer |
 | `tests/Gizlet.Core.Tests/` | Unit tests, including the ext4 grow against gizlet/os's layout and the release manifest the Launcher accepts |
 | `tests/Gizlet.Windows.Tests/` | Tests against the real Windows APIs, skipped elsewhere |
 | `installer/` | The Inno Setup script |
-| `scripts/` | `ci.ps1`, `package.ps1`, `install-inno.ps1`, `check-imports.ps1` |
+| `scripts/` | `ci.ps1`, `package.ps1`, `install-inno.ps1`, `check-imports.ps1`, `ui-check.ps1` |
 | `tools/Gizlet.StoreCheck/` | The Store end-to-end check |
 | `devops/` | The release script, signing setup, the update key's public half and the encrypted release secrets |
 | `docs/releases/` | Each release's notes, `<tag>.en.md` and `<tag>.zh-CN.md`, shown in the Launcher's update banner |
@@ -53,7 +53,7 @@ Follows the [gizlet/.github](https://github.com/gizlet/.github) setup. Pull requ
 | --- | --- |
 | `triage.yml` | On every pull-request push, gizlet-bot comments `/ci` and `/codex-review` for the head, which starts the two workflows below. A writer's comment with either command runs it again. GitHub-hosted, never checks out PR code. |
 | `codex-review.yml` | The `Codex Code Review` check, with review guidance for card-write targets, the UAC boundary, update verification and profile data. GitHub-hosted. |
-| `ci.yml` | The `CI` check: `scripts/ci.ps1` at the tested commit, with a read-only token and no secrets. |
+| `ci.yml` | The `CI` check: `scripts/ci.ps1` at the tested commit, with a read-only token and no secrets. It installs the Launcher, opens its real window, walks every page in English and light and again in Simplified Chinese and dark (`scripts/ui-check.ps1`), and keeps the screenshots as the `ui-screenshots` artifact. |
 | `release.yml` | Releases, below. |
 | `store-e2e.yml` | On `main`, daily and on demand: `tools/Gizlet.StoreCheck` searches the live Store, installs The Little Prince, opens it in one of two profiles with the Launcher's environment (Mesa's software OpenGL on the GPU-less runner), plays its saving replay, and checks that the saves and favourites stay with that profile through an uninstall and a reinstall. Not a pull-request check. |
 

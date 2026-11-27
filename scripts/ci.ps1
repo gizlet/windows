@@ -1,7 +1,8 @@
 # Builds and tests the repository as CI does, on Windows. Run from any directory.
 #
 # Unit tests, then the Windows tests, then an unsigned x64 installer, which is installed for the
-# current user, started in smoke-test mode and uninstalled again, leaving user data alone.
+# current user, started in smoke-test mode, opened and walked page by page (scripts/ui-check.ps1)
+# and uninstalled again, leaving user data alone.
 $ErrorActionPreference = 'Stop'
 Set-Location (Split-Path -Parent $PSScriptRoot)
 
@@ -28,6 +29,8 @@ foreach ($exe in 'Gizlet.Launcher.exe', 'Gizlet.FlashHelper.exe') {
 }
 $p = Start-Process -FilePath (Join-Path $app 'Gizlet.Launcher.exe') -ArgumentList '--smoke' -Wait -PassThru
 if ($p.ExitCode -ne 0) { throw "Launcher smoke test exited with $($p.ExitCode)" }
+# The real window: every page, then Simplified Chinese and dark, with screenshots in artifacts/ui.
+& ./scripts/ui-check.ps1 -Launcher (Join-Path $app 'Gizlet.Launcher.exe') -Output artifacts/ui
 $uninstaller = Get-ChildItem $app -Filter 'unins*.exe' | Select-Object -First 1
 $p = Start-Process -FilePath $uninstaller.FullName -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' -Wait -PassThru
 if ($p.ExitCode -ne 0) { throw "Uninstaller exited with $($p.ExitCode)" }

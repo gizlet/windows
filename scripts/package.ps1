@@ -28,8 +28,9 @@ $installerDir = Join-Path $output 'installer'
 Remove-Item -Recurse -Force $publish -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force $publish, $installerDir | Out-Null
 
+# Tool output goes to the console, not the pipeline: the script's only output is the installer path.
 function Invoke([string]$file, [string[]]$arguments) {
-    & $file @arguments
+    & $file @arguments | Out-Host
     if ($LASTEXITCODE -ne 0) { throw "$file exited with $LASTEXITCODE" }
 }
 
