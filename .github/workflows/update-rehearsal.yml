@@ -8,7 +8,7 @@ name: Update rehearsal
 
 on:
   push:
-    branches: [main, codex/update-rehearsal]
+    branches: [main]
   schedule:
     - cron: '41 4 * * 1'
   workflow_dispatch:
