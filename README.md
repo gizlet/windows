@@ -55,7 +55,7 @@ Follows the [gizlet/.github](https://github.com/gizlet/.github) setup. Pull requ
 | `ci.yml` | The `CI` check: `scripts/ci.ps1` at the tested commit, with a read-only token and no secrets. |
 | `release.yml` | Releases, below. |
 
-Builds run on the runner the `RUNNERS` organization variable maps to `windows-x64`, falling back to GitHub's `windows-2025` runner until that key exists. Comment-triggered workflows run their copy on `main`, so a pull request that changes them is tested by the old ones.
+Builds run on the runner the `RUNNERS` organization variable maps to `windows-x64`, falling back to GitHub's `windows-2025` runner until that key exists. Releases, which decrypt the signing credentials, run on `RUNNERS['windows-x64-release']`, a self-hosted runner that never builds pull requests, or a fresh GitHub-hosted runner without it. Comment-triggered workflows run their copy on `main`, so a pull request that changes them is tested by the old ones.
 
 ## Releasing
 

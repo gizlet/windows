@@ -50,9 +50,11 @@ sealed class LauncherUpdates
         timer.Start();
     }
 
+    bool installing;
+
     public async Task CheckAsync()
     {
-        if (State is UpdateState.Downloading or UpdateState.Verifying or UpdateState.WaitingForFlash or UpdateState.Installing) return;
+        if (installing) return;
         if (!await checking.WaitAsync(0)) return;
         try
         {
@@ -60,6 +62,7 @@ sealed class LauncherUpdates
             var update = await Task.Run(() => checker.CheckAsync());
             LastCheckFailed = false;
             CheckedAt = DateTimeOffset.Now;
+            if (installing) return;
             if (update is not null && (Available is null || update.Version >= Available.Version)) Available = update;
             Set(Available is null ? UpdateState.Idle : UpdateState.Available);
         }
@@ -67,7 +70,7 @@ sealed class LauncherUpdates
         {
             LastCheckFailed = true;
             CheckedAt = DateTimeOffset.Now;
-            Set(Available is null ? UpdateState.Idle : UpdateState.Available);
+            if (!installing) Set(Available is null ? UpdateState.Idle : UpdateState.Available);
         }
         finally
         {
@@ -78,7 +81,8 @@ sealed class LauncherUpdates
     /// <summary>Downloads, verifies and installs the available update, then restarts into it.</summary>
     public async Task InstallAsync()
     {
-        if (Available is not { } update || State is not (UpdateState.Available or UpdateState.Failed)) return;
+        if (installing || Available is not { } update || State is not (UpdateState.Available or UpdateState.Failed)) return;
+        installing = true;
         try
         {
             Failure = null;
@@ -115,6 +119,7 @@ sealed class LauncherUpdates
         catch (Exception e)
         {
             Failure = e is GizletException { Error: GizletError.UpdatePublisher } g ? g.Detail : S.Error(e);
+            installing = false;
             Set(UpdateState.Failed);
         }
     }

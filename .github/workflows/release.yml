@@ -44,7 +44,9 @@ jobs:
   build:
     name: Build, test and sign (Windows x64)
     needs: verify
-    runs-on: ${{ fromJSON(vars.RUNNERS || '{}')['windows-x64'] || 'windows-2025' }}
+    # Signing keys are decrypted here, so never on the runner that builds pull requests
+    # (RUNNERS.windows-x64): a dedicated, trusted runner, or a fresh GitHub-hosted one.
+    runs-on: ${{ fromJSON(vars.RUNNERS || '{}')['windows-x64-release'] || 'windows-2025' }}
     timeout-minutes: 90
     env:
       DOTNET_CLI_TELEMETRY_OPTOUT: '1'

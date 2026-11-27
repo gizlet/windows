@@ -40,15 +40,40 @@ public sealed partial class OsImages(HttpClient http, SshPublicKey trusted, stri
     {
         var latest = await http.GetFromJsonAsync<Latest>(new Uri(api, "v1/os/releases/latest"), JsonFile.Options, cancellationToken).ConfigureAwait(false)
             ?? throw new GizletException(GizletError.ImageBadLayout, "no release");
-        if (latest is not { Tag: { } tag, ManifestUrl: { Scheme: "https" } manifestUrl, SignatureUrl: { Scheme: "https" } signatureUrl })
+        if (latest is not { Tag: { } tag, ManifestUrl: { } manifestUrl, SignatureUrl: { } signatureUrl }
+            || !Pinned(manifestUrl, tag, "manifest.json") || !Pinned(signatureUrl, tag, "manifest.json.sig"))
         {
-            throw new GizletException(GizletError.SignatureInvalid, "the latest release has no signed manifest");
+            throw new GizletException(GizletError.SignatureInvalid, "the latest release has no signed manifest on the Gizlet server");
         }
-        var manifest = await http.GetByteArrayAsync(manifestUrl, cancellationToken).ConfigureAwait(false);
-        var signature = await http.GetStringAsync(signatureUrl, cancellationToken).ConfigureAwait(false);
+        var manifest = await GetBytesAsync(manifestUrl, cancellationToken).ConfigureAwait(false);
+        var signature = System.Text.Encoding.UTF8.GetString(await GetBytesAsync(signatureUrl, cancellationToken).ConfigureAwait(false));
         var release = Parse(manifest, signature, manifestUrl);
         if (release.Tag != tag) throw new GizletException(GizletError.SignatureInvalid, $"signed for {release.Tag}, offered as {tag}");
         return release;
+    }
+
+    /// <summary>The API's own host, over HTTPS, under <c>/assets/releases/TAG/</c>: release files come from nowhere else.</summary>
+    bool Pinned(Uri url, string tag, string? file = null) =>
+        url.Scheme == Uri.UriSchemeHttps && string.Equals(url.Host, api.Host, StringComparison.OrdinalIgnoreCase) && url.Port == api.Port
+        && url.AbsolutePath.StartsWith($"/assets/releases/{tag}/", StringComparison.Ordinal)
+        && (file is null || url.AbsolutePath == $"/assets/releases/{tag}/{file}")
+        && string.IsNullOrEmpty(url.Query) && !url.AbsolutePath.Contains("/../", StringComparison.Ordinal);
+
+    void CheckFinal(HttpResponseMessage response, string tag)
+    {
+        if (response.RequestMessage?.RequestUri is not { } final || !Pinned(final, tag))
+        {
+            throw new GizletException(GizletError.SignatureInvalid, $"redirected away from the Gizlet server: {response.RequestMessage?.RequestUri}");
+        }
+    }
+
+    async Task<byte[]> GetBytesAsync(Uri url, CancellationToken cancellationToken)
+    {
+        using var response = await http.GetAsync(url, cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        var tag = url.AbsolutePath.Split('/')[3];
+        CheckFinal(response, tag);
+        return await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
     }
 
     sealed record Latest
@@ -83,7 +108,8 @@ public sealed partial class OsImages(HttpClient http, SshPublicKey trusted, stri
     public async Task<CardImage> DownloadAsync(OsRelease release, IProgress<(string Stage, double Fraction)>? progress = null, CancellationToken cancellationToken = default)
     {
         var file = release.Image.Segments[^1];
-        var sums = await http.GetStringAsync(release.Checksums, cancellationToken).ConfigureAwait(false);
+        if (!Pinned(release.Image, release.Tag) || !Pinned(release.Checksums, release.Tag)) throw new GizletException(GizletError.SignatureInvalid, "release files outside the Gizlet server");
+        var sums = System.Text.Encoding.UTF8.GetString(await GetBytesAsync(release.Checksums, cancellationToken).ConfigureAwait(false));
         var expected = ChecksumFor(sums, file) ?? throw new GizletException(GizletError.ImageBadChecksum, $"SHA256SUMS does not list {file}");
         var folder = Path.Combine(directory, release.Tag);
         Directory.CreateDirectory(folder);
@@ -95,7 +121,7 @@ public sealed partial class OsImages(HttpClient http, SshPublicKey trusted, stri
         {
             return new CardImage(raw, size, hash, true, release.Tag);
         }
-        await DownloadFileAsync(release.Image, packed, p => progress?.Report(("download", p)), cancellationToken).ConfigureAwait(false);
+        await DownloadFileAsync(release.Image, packed, release.Tag, p => progress?.Report(("download", p)), cancellationToken).ConfigureAwait(false);
         string actual;
         await using (var check = File.OpenRead(packed))
         {
@@ -138,7 +164,7 @@ public sealed partial class OsImages(HttpClient http, SshPublicKey trusted, stri
         return null;
     }
 
-    async Task DownloadFileAsync(Uri url, string path, Action<double> progress, CancellationToken cancellationToken)
+    async Task DownloadFileAsync(Uri url, string path, string tag, Action<double> progress, CancellationToken cancellationToken)
     {
         var partial = path + ".partial";
         var have = File.Exists(partial) ? new FileInfo(partial).Length : 0;
@@ -146,6 +172,7 @@ public sealed partial class OsImages(HttpClient http, SshPublicKey trusted, stri
         if (have > 0) request.Headers.Range = new RangeHeaderValue(have, null);
         using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
+        CheckFinal(response, tag);
         var append = have > 0 && response.StatusCode == System.Net.HttpStatusCode.PartialContent;
         if (!append) have = 0;
         var total = have + (response.Content.Headers.ContentLength ?? 0);

@@ -148,10 +148,21 @@ sealed class Flasher(FlashRequest request, Reporter report)
             disk = Identify(image.Name);
             cancellationToken.ThrowIfCancellationRequested();
             using (var locked = LockedVolumes.Lock(disk.Volumes, TimeSpan.FromSeconds(10)))
-            using (var device = RawDisk.Open(disk.Number))
+            using (var device = RawDisk.Open(request.Disk.DevicePath))
             {
-                if (device.Length != disk.Size) throw new GizletException(GizletError.DiskChanged, "size changed");
-                if (device.MediaChangeCount() != request.Disk.MediaChangeCount) throw new GizletException(GizletError.DiskChanged, "card taken out or put in");
+                // The handle that writes is the one checked: the confirmed device, unchanged.
+                var facts = DiskEnumerator.Query(device.Handle) ?? throw new GizletException(GizletError.DiskChanged, "not a disk");
+                var confirmed = request.Disk;
+                if (facts.Number != confirmed.Number || facts.Size != confirmed.Size || facts.Bus != confirmed.Bus
+                    || facts.Vendor != confirmed.Vendor || facts.Product != confirmed.Product || facts.Serial != confirmed.Serial
+                    || device.Length != confirmed.Size)
+                {
+                    throw new GizletException(GizletError.DiskChanged, "another device");
+                }
+                if (facts.MediaChangeCount is null || facts.MediaChangeCount != confirmed.MediaChangeCount) throw new GizletException(GizletError.DiskChanged, "card taken out or put in");
+                if (!facts.RemovableMedia) throw new GizletException(GizletError.DiskNotEligible, "fixed disk");
+                var lockedVolumes = disk.Volumes.Select(v => v.GuidPath).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                if (DiskEnumerator.VolumesOf(facts.Number).Any(v => !lockedVolumes.Contains(v.GuidPath))) throw new GizletException(GizletError.DiskChanged, "a volume appeared");
                 if (DiskEnumerator.HasSystemPartitions(device.Handle)) throw new GizletException(GizletError.DiskNotEligible, "holds an EFI, reserved or recovery partition");
                 cancellationToken.ThrowIfCancellationRequested();
                 // From here a stop would leave a broken card: the write runs to its end.

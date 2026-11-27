@@ -30,12 +30,16 @@ public static unsafe class DiskEnumerator
         return disks;
     }
 
-    static DiskInfo? Describe(string path, List<(DiskVolume Volume, HashSet<int> Disks, bool System)> volumes, HashSet<string> protectedVolumes)
+    /// <summary>What a disk handle (opened for queries, or for writing) says about the disk.</summary>
+    public sealed record DeviceFacts(int Number, DiskBus Bus, bool RemovableMedia, string Vendor, string Product, string? Serial,
+        long Size, int BytesPerSector, uint? MediaChangeCount);
+
+    public static DeviceFacts? Query(Microsoft.Win32.SafeHandles.SafeFileHandle handle)
     {
-        using var handle = Native.OpenForQuery(path);
-        if (handle.IsInvalid) return null;
         Span<byte> number = stackalloc byte[12];
         if (Native.Ioctl(handle, Native.IoctlStorageGetDeviceNumber, [], number, out _) < 12) return null;
+        // FILE_DEVICE_DISK only: never a CD-ROM, a volume or anything else behind the same path.
+        if (BinaryPrimitives.ReadInt32LittleEndian(number) != 7) return null;
         var diskNumber = BinaryPrimitives.ReadInt32LittleEndian(number[4..]);
 
         Span<byte> query = stackalloc byte[12];
@@ -49,7 +53,6 @@ public static unsafe class DiskEnumerator
             0xD => DiskBus.Mmc,
             _ => DiskBus.Other,
         };
-
         long size = 0;
         var sector = 512;
         Span<byte> geometry = stackalloc byte[256];
@@ -62,22 +65,35 @@ public static unsafe class DiskEnumerator
         uint? mediaChanges = Native.Ioctl(handle, Native.IoctlStorageCheckVerify2, [], changes, out _) >= 4
             ? BinaryPrimitives.ReadUInt32LittleEndian(changes)
             : null;
+        return new DeviceFacts(diskNumber, bus, descriptor[10] != 0,
+            DescriptorString(descriptor, length, 12), DescriptorString(descriptor, length, 16),
+            DescriptorString(descriptor, length, 24) is { Length: > 0 } serial ? serial : null,
+            size, sector, mediaChanges);
+    }
 
-        var own = volumes.Where(v => v.Disks.Contains(diskNumber)).ToList();
+    /// <summary>The volumes Windows has on a disk.</summary>
+    public static IReadOnlyList<DiskVolume> VolumesOf(int number) =>
+        Volumes().Where(v => v.Disks.Contains(number)).Select(v => v.Volume).ToList();
+
+    static DiskInfo? Describe(string path, List<(DiskVolume Volume, HashSet<int> Disks, bool System)> volumes, HashSet<string> protectedVolumes)
+    {
+        using var handle = Native.OpenForQuery(path);
+        if (handle.IsInvalid || Query(handle) is not { } facts) return null;
+        var own = volumes.Where(v => v.Disks.Contains(facts.Number)).ToList();
         var holdsSystem = own.Any(v => v.System || protectedVolumes.Contains(v.Volume.GuidPath))
-            || (bus == DiskBus.Other && size > 0 && own.Count == 0 && diskNumber == 0);
+            || (facts.Bus == DiskBus.Other && facts.Size > 0 && own.Count == 0 && facts.Number == 0);
         return new DiskInfo
         {
-            Number = diskNumber,
+            Number = facts.Number,
             DevicePath = path,
-            Size = size,
-            BytesPerSector = sector,
-            Bus = bus,
-            RemovableMedia = descriptor[10] != 0,
-            Vendor = DescriptorString(descriptor, length, 12),
-            Product = DescriptorString(descriptor, length, 16),
-            Serial = DescriptorString(descriptor, length, 24) is { Length: > 0 } serial ? serial : null,
-            MediaChangeCount = mediaChanges,
+            Size = facts.Size,
+            BytesPerSector = facts.BytesPerSector,
+            Bus = facts.Bus,
+            RemovableMedia = facts.RemovableMedia,
+            Vendor = facts.Vendor,
+            Product = facts.Product,
+            Serial = facts.Serial,
+            MediaChangeCount = facts.MediaChangeCount,
             Volumes = own.Select(v => v.Volume).ToList(),
             HoldsSystem = holdsSystem,
         };

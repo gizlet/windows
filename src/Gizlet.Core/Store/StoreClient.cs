@@ -18,12 +18,9 @@ public sealed class StoreClient(HttpClient http, WindowsTarget target, Uri? api 
 
     public WindowsTarget Target => target;
 
-    /// <summary>The target to filter by on the server, when this machine runs only one architecture.</summary>
-    string? ServerTarget => target.Architectures.Count == 1 ? target.Preferred : null;
-
     public async Task<StoreFeatured> FeaturedAsync(CancellationToken cancellationToken = default)
     {
-        var featured = await GetAsync<StoreFeatured>($"v1/featured?kind=app{TargetQuery()}", cancellationToken).ConfigureAwait(false);
+        var featured = await GetAsync<StoreFeatured>("v1/featured?kind=app", cancellationToken).ConfigureAwait(false);
         return featured with
         {
             Hero = featured.Hero.Where(Runs).ToList(),
@@ -36,7 +33,9 @@ public sealed class StoreClient(HttpClient http, WindowsTarget target, Uri? api 
 
     public async Task<StoreSearch> SearchAsync(string query, string? cursor = null, int limit = 24, CancellationToken cancellationToken = default)
     {
-        var path = $"v1/gizlets?kind=app&q={Uri.EscapeDataString(query.Trim())}&limit={limit}{TargetQuery()}";
+        // Filtered here rather than by the server, which takes one target: this PC runs several
+        // (msvc, gnullvm and gnu builds; on Arm64, x64 ones too).
+        var path = $"v1/gizlets?kind=app&q={Uri.EscapeDataString(query.Trim())}&limit={limit}";
         if (cursor is not null) path += $"&cursor={Uri.EscapeDataString(cursor)}";
         var search = await GetAsync<StoreSearch>(path, cancellationToken).ConfigureAwait(false);
         return search with { Gizlets = search.Gizlets.Where(Runs).ToList() };
@@ -126,8 +125,6 @@ public sealed class StoreClient(HttpClient http, WindowsTarget target, Uri? api 
             throw;
         }
     }
-
-    string TargetQuery() => ServerTarget is { } t ? $"&target={Uri.EscapeDataString(t)}&tier={Tier}" : "";
 
     /// <summary><c>github.com/owner/repo</c>, checked, as an API path.</summary>
     internal static string RepoPath(string repo)

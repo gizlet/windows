@@ -28,9 +28,11 @@ public sealed unsafe class RawDisk : IBlockDevice, IDisposable
     public int SectorSize { get; }
     public SafeFileHandle Handle => handle;
 
-    public static RawDisk Open(int number)
+    /// <summary>Opens the disk at a device interface path (<c>\\?\usbstor#...</c>), the one the user confirmed.</summary>
+    public static RawDisk Open(string devicePath)
     {
-        var handle = Native.CreateFile($@"\\.\PhysicalDrive{number}", Native.GenericRead | Native.GenericWrite,
+        if (!devicePath.StartsWith(@"\\?\", StringComparison.Ordinal)) throw new ArgumentException("Not a device interface path", nameof(devicePath));
+        var handle = Native.CreateFile(devicePath, Native.GenericRead | Native.GenericWrite,
             Native.FileShareRead | Native.FileShareWrite, 0, Native.OpenExisting, Native.FileFlagNoBuffering | Native.FileFlagWriteThrough, 0);
         if (handle.IsInvalid) throw new Win32Exception(Marshal.GetLastPInvokeError());
         Span<byte> geometry = stackalloc byte[256];
