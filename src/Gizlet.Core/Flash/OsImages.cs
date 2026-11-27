@@ -11,8 +11,11 @@ namespace Gizlet.Core.Flash;
 /// <summary>An unpacked card image ready to write, with the size and SHA-256 the helper checks again.</summary>
 public sealed record CardImage(string Path, long Size, string Sha256, bool Official, string? Tag);
 
-/// <summary>The R36S image of a Gizlet OS release.</summary>
-public sealed record OsRelease(string Tag, Uri Image, Uri Checksums);
+/// <summary>
+/// The R36S image of a Gizlet OS release. Releases from gizlet/os#58 on sign the image's own
+/// SHA-256 and size; earlier ones only name its <c>SHA256SUMS</c>.
+/// </summary>
+public sealed record OsRelease(string Tag, Uri Image, Uri Checksums, string? ImageSha256 = null, long? ImageBytes = null);
 
 /// <summary>
 /// Gizlet OS releases, found with <c>GET /api/v1/os/releases/latest</c> and served from
@@ -101,7 +104,17 @@ public sealed partial class OsImages(HttpClient http, SshPublicKey trusted, stri
         {
             throw new GizletException(GizletError.ImageBadLayout, "release paths");
         }
-        return new OsRelease(tag, new Uri(at, imagePath), new Uri(at, checksumPath));
+        string? digest = null;
+        long? bytes = null;
+        if (image.TryGetProperty("sha256", out var sha))
+        {
+            digest = sha.GetString();
+            if (digest is not { Length: 64 } || !digest.All(Uri.IsHexDigit)) throw new GizletException(GizletError.ImageBadLayout, "image sha256");
+            digest = digest.ToLowerInvariant();
+            if (!image.TryGetProperty("bytes", out var size) || !size.TryGetInt64(out var b) || b <= 0) throw new GizletException(GizletError.ImageBadLayout, "image bytes");
+            bytes = b;
+        }
+        return new OsRelease(tag, new Uri(at, imagePath), new Uri(at, checksumPath), digest, bytes);
     }
 
     /// <summary>Downloads, checks and unpacks a release's image, reusing an earlier download.</summary>
@@ -111,6 +124,8 @@ public sealed partial class OsImages(HttpClient http, SshPublicKey trusted, stri
         if (!Pinned(release.Image, release.Tag) || !Pinned(release.Checksums, release.Tag)) throw new GizletException(GizletError.SignatureInvalid, "release files outside the Gizlet server");
         var sums = System.Text.Encoding.UTF8.GetString(await GetBytesAsync(release.Checksums, cancellationToken).ConfigureAwait(false));
         var expected = ChecksumFor(sums, file) ?? throw new GizletException(GizletError.ImageBadChecksum, $"SHA256SUMS does not list {file}");
+        // The signed digest, when the release has one, decides; SHA256SUMS must agree with it.
+        if (release.ImageSha256 is { } signed && signed != expected) throw new GizletException(GizletError.ImageBadChecksum, "SHA256SUMS differs from the signed manifest");
         var folder = Path.Combine(directory, release.Tag);
         Directory.CreateDirectory(folder);
         var raw = Path.Combine(folder, "card.img");
@@ -127,7 +142,7 @@ public sealed partial class OsImages(HttpClient http, SshPublicKey trusted, stri
         {
             actual = Convert.ToHexStringLower(await SHA256.HashDataAsync(check, cancellationToken).ConfigureAwait(false));
         }
-        if (actual != expected)
+        if (actual != expected || (release.ImageBytes is { } signedBytes && new FileInfo(packed).Length != signedBytes))
         {
             File.Delete(packed);
             throw new GizletException(GizletError.ImageBadChecksum, file);

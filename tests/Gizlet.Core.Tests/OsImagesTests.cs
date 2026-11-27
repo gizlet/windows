@@ -60,4 +60,51 @@ public class OsImagesTests
             Images("gizlet.io", new Uri("https://evil.example/assets/releases/v0.4.4/manifest.json")).LatestAsync());
         Assert.Equal(GizletError.SignatureInvalid, error.Error);
     }
+
+    /// <summary>A release that signs its image's digest, served by a stub Gizlet server.</summary>
+    static OsImages Signed(string directory, string sums, byte[]? image = null)
+    {
+        var server = new Server(uri => uri.AbsolutePath switch
+        {
+            "/api/v1/os/releases/latest" => Ok(Encoding.UTF8.GetBytes("""{"tag":"v9.9.9","manifest_url":"https://gizlet.io/assets/releases/v9.9.9/manifest.json","signature_url":"https://gizlet.io/assets/releases/v9.9.9/manifest.json.sig"}""")),
+            "/assets/releases/v9.9.9/manifest.json" => Ok(Fixtures.Bytes("os-v9.9.9-manifest.json")),
+            "/assets/releases/v9.9.9/manifest.json.sig" => Ok(Fixtures.Bytes("os-v9.9.9-manifest.json.sig")),
+            "/assets/releases/v9.9.9/boards/gameconsole/r36s/SHA256SUMS" => Ok(Encoding.ASCII.GetBytes(sums)),
+            "/assets/releases/v9.9.9/boards/gameconsole/r36s/gizlet-os-r36s.img.gz" => Ok(image ?? Fixtures.Bytes("os-v9.9.9-image.img.gz")),
+            _ => null,
+        });
+        return new OsImages(new HttpClient(server), SshPublicKey.Parse(Fixtures.Text("test-os-key.pub")), directory, new Uri("https://gizlet.io/api/"));
+    }
+
+    static string Sums(byte[] image) => $"{Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(image))}  gizlet-os-r36s.img.gz\n";
+
+    [Fact]
+    public async Task DownloadsAnImageMatchingItsSignedDigest()
+    {
+        using var temp = new TempDirectory();
+        var images = Signed(temp.Path, Sums(Fixtures.Bytes("os-v9.9.9-image.img.gz")));
+        var release = await images.LatestAsync();
+        Assert.Equal(Fixtures.Bytes("os-v9.9.9-image.img.gz").Length, release.ImageBytes);
+        var image = await images.DownloadAsync(release);
+        Assert.True(image.Official);
+        Assert.Equal(16 * 4096, image.Size);
+    }
+
+    [Fact]
+    public async Task RefusesChecksumsThatContradictTheSignedDigest()
+    {
+        using var temp = new TempDirectory();
+        var forged = Fixtures.Bytes("os-v9.9.9-image.img.gz").ToArray();
+        forged[^5] ^= 1;
+        var images = Signed(temp.Path, Sums(forged), forged);
+        var release = await images.LatestAsync();
+        var error = await Assert.ThrowsAsync<GizletException>(() => images.DownloadAsync(release));
+        Assert.Equal(GizletError.ImageBadChecksum, error.Error);
+
+        // The right SHA256SUMS does not let another image through either.
+        using var again = new TempDirectory();
+        images = Signed(again.Path, Sums(Fixtures.Bytes("os-v9.9.9-image.img.gz")), forged);
+        error = await Assert.ThrowsAsync<GizletException>(() => images.DownloadAsync(release));
+        Assert.Equal(GizletError.ImageBadChecksum, error.Error);
+    }
 }
