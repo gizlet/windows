@@ -31,6 +31,7 @@ sealed class Launcher
         Profiles = new ProfileStore(Layout);
         Store = new StoreClient(Http, Target);
         Runner = new AppRunner(this);
+        _ = Task.Run(Runner.Rediscover);
         AppUpdates = new AppUpdates(this);
         Flash = new FlashSession(this);
         Updates = new LauncherUpdates(this);
@@ -44,7 +45,8 @@ sealed class Launcher
         ? v.Value : new SemVersion(0, 0, 0);
 
     public WindowsTarget Target { get; } = WindowsTarget.Current;
-    public string Architecture => Target.Architecture == System.Runtime.InteropServices.Architecture.Arm64 ? "arm64" : "x64";
+    /// <summary>The installer to update with: this build's own architecture (an x64 build on Arm64 stays x64).</summary>
+    public static string Architecture => System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture == System.Runtime.InteropServices.Architecture.Arm64 ? "arm64" : "x64";
     public DataLayout Layout { get; }
     public HttpClient Http { get; }
     public AppLibrary Library { get; }

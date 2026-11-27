@@ -83,6 +83,30 @@ static unsafe partial class Native
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool SetupDiDestroyDeviceInfoList(nint devices);
 
+    [LibraryImport("setupapi.dll", EntryPoint = "SetupDiGetDevicePropertyW", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool SetupDiGetDeviceProperty(nint devices, ref DevInfoData device, in DevPropKey key, out uint type, void* buffer, uint size, out uint required, uint flags);
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct DevInfoData
+    {
+        public uint Size;
+        public Guid ClassGuid;
+        public uint DevInst;
+        public nuint Reserved;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct DevPropKey(Guid fmtid, uint pid)
+    {
+        public Guid Fmtid = fmtid;
+        public uint Pid = pid;
+    }
+
+    /// <summary>DEVPKEY_Device_LastArrivalDate: when the device last came, as a FILETIME.</summary>
+    public static readonly DevPropKey LastArrivalDate = new(new Guid("83da6326-97a6-4088-9453-a1923f573b29"), 102);
+    public const uint DevPropTypeFiletime = 0x10;
+
     [StructLayout(LayoutKind.Sequential)]
     public struct DeviceInterfaceData
     {

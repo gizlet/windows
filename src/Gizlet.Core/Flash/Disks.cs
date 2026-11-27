@@ -28,6 +28,11 @@ public sealed record DiskInfo
     public string? Serial { get; init; }
     /// <summary>The reader's media change count: it moves when a card is taken out or put in.</summary>
     public uint? MediaChangeCount { get; init; }
+    /// <summary>
+    /// When Windows last saw the disk device arrive (a FILETIME): it moves when the whole reader is
+    /// unplugged and plugged in again, which can reset the media change count.
+    /// </summary>
+    public long? ArrivedAt { get; init; }
     public IReadOnlyList<DiskVolume> Volumes { get; init; } = [];
     /// <summary>Holds Windows, the boot or EFI system partition, a page file, or the Launcher itself.</summary>
     public bool HoldsSystem { get; init; }
@@ -55,6 +60,7 @@ public sealed record DiskIdentity
     public string Product { get; init; } = "";
     public string? Serial { get; init; }
     public uint? MediaChangeCount { get; init; }
+    public long? ArrivedAt { get; init; }
     public IReadOnlyList<string> Volumes { get; init; } = [];
 
     public static DiskIdentity Of(DiskInfo disk) => new()
@@ -67,6 +73,7 @@ public sealed record DiskIdentity
         Product = disk.Product,
         Serial = disk.Serial,
         MediaChangeCount = disk.MediaChangeCount,
+        ArrivedAt = disk.ArrivedAt,
         Volumes = disk.Volumes.Select(v => $"{v.GuidPath}|{v.Serial?.ToString("x8", System.Globalization.CultureInfo.InvariantCulture)}").Order(StringComparer.Ordinal).ToList(),
     };
 
@@ -79,6 +86,7 @@ public sealed record DiskIdentity
         && Product == other.Product
         && Serial == other.Serial
         && MediaChangeCount == other.MediaChangeCount
+        && ArrivedAt == other.ArrivedAt
         && Volumes.SequenceEqual(other.Volumes, StringComparer.OrdinalIgnoreCase);
 }
 
@@ -98,6 +106,7 @@ public static class DiskRules
         if (disk.Bus is not (DiskBus.Usb or DiskBus.Sd or DiskBus.Mmc)) return "is not a USB or SD card reader";
         if (!disk.RemovableMedia) return "is a fixed disk, not a card";
         if (disk.MediaChangeCount is null) return "cannot tell when its card is changed";
+        if (disk.ArrivedAt is null) return "cannot tell when the reader is plugged in again";
         if (disk.Size <= 0) return "has no media";
         if (disk.BytesPerSector is not (512 or 4096)) return $"has {disk.BytesPerSector}-byte sectors";
         if (imageBytes > disk.Size) return "is smaller than the image";

@@ -21,6 +21,9 @@ public class WindowsTests
         Assert.NotNull(DiskRules.Refusal(windows[0]));
         Assert.All(disks.Where(d => d.Bus == DiskBus.Other), d => Assert.NotNull(DiskRules.Refusal(d)));
         Assert.All(disks, d => Assert.StartsWith(@"\\?\", d.DevicePath, StringComparison.Ordinal));
+        // Windows records when each disk device arrived; a reader plugged in again gets a new time.
+        Assert.All(disks, d => Assert.NotNull(d.ArrivedAt));
+        Assert.Equal(windows[0].ArrivedAt, DiskEnumerator.ArrivalOf(windows[0].DevicePath));
     }
 
     [Fact]

@@ -20,6 +20,7 @@ sealed class StorePage : LauncherPage
     readonly InfoBar status = new() { IsClosable = true };
     CancellationTokenSource? loading;
     string query = "";
+    bool catalogue;
     string? cursor;
     StackPanel? results;
     StoreGizlet? detail;
@@ -70,6 +71,7 @@ sealed class StorePage : LauncherPage
         if (detail is not null) _ = OpenAsync(detail.Repo);
         else if (query.Length > 0) Search(query);
         else _ = LoadFeaturedAsync();
+        catalogue = false;
     }
 
     CancellationToken Begin()
@@ -107,9 +109,9 @@ sealed class StorePage : LauncherPage
             foreach (var section in featured.Sections) panel.Children.Add(Ui.Stack(8, Ui.Subtitle(section.TitleIn(S.Language)), Shelf(section.Gizlets)));
             if (panel.Children.Count == 0)
             {
-                // Nothing hand-picked for Windows yet: list what there is.
-                var all = await Launcher.Store.SearchAsync("", null, 48, token);
-                panel.Children.Add(all.Gizlets.Count == 0 ? Ui.Card(Ui.Text(S.NothingForWindows), 24) : Ui.Stack(8, Ui.Subtitle(S.AllApps), List(all.Gizlets)));
+                // Nothing hand-picked for Windows yet: page through the whole catalogue instead.
+                ShowList(S.AllApps, "", catalogueMode: true);
+                return;
             }
             Set(panel);
         }
@@ -130,11 +132,18 @@ sealed class StorePage : LauncherPage
             _ = LoadFeaturedAsync();
             return;
         }
+        ShowList(S.Results(query), query, catalogueMode: false);
+    }
+
+    void ShowList(string title, string text, bool catalogueMode)
+    {
         detail = null;
         cursor = null;
+        query = text;
+        catalogue = catalogueMode;
         Fresh();
         results = new StackPanel { Spacing = 4 };
-        Set(Ui.Stack(8, Ui.Subtitle(S.Results(query)), results));
+        Set(Ui.Stack(8, Ui.Subtitle(title), results));
         _ = MoreAsync();
     }
 
@@ -148,11 +157,22 @@ sealed class StorePage : LauncherPage
         list.Children.Add(spinner);
         try
         {
-            var page = await Launcher.Store.SearchAsync(query, cursor, 24, token);
+            // The Store filters by platform here, not on the server: a page may hold nothing for this
+            // PC while later ones do, so keep going until something is found or the catalogue ends.
+            var added = 0;
+            for (var pages = 0; pages < 10; pages++)
+            {
+                var page = await Launcher.Store.SearchAsync(query, cursor, 48, token);
+                foreach (var gizlet in page.Gizlets)
+                {
+                    list.Children.Insert(list.Children.Count - 1, Row(gizlet));
+                    added++;
+                }
+                cursor = page.NextCursor;
+                if (added > 0 || cursor is null) break;
+            }
             list.Children.Remove(spinner);
-            foreach (var gizlet in page.Gizlets) list.Children.Add(Row(gizlet));
-            cursor = page.NextCursor;
-            if (list.Children.Count == 0) list.Children.Add(Ui.Card(Ui.Text(S.NothingFound), 24));
+            if (list.Children.Count == 0) list.Children.Add(Ui.Card(Ui.Text(catalogue ? S.NothingForWindows : S.NothingFound), 24));
             if (cursor is not null) list.Children.Add(Ui.Button(S.LoadMore, () => _ = MoreAsync()));
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)

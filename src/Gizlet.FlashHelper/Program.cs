@@ -160,6 +160,9 @@ sealed class Flasher(FlashRequest request, Reporter report)
                     throw new GizletException(GizletError.DiskChanged, "another device");
                 }
                 if (facts.MediaChangeCount is null || facts.MediaChangeCount != confirmed.MediaChangeCount) throw new GizletException(GizletError.DiskChanged, "card taken out or put in");
+                // A reader plugged in again may count from scratch: its arrival time moves instead.
+                // Checked while the handle is open, so a later reconnect invalidates the handle itself.
+                if (confirmed.ArrivedAt is null || DiskEnumerator.ArrivalOf(confirmed.DevicePath) != confirmed.ArrivedAt) throw new GizletException(GizletError.DiskChanged, "reader plugged in again");
                 if (!facts.RemovableMedia) throw new GizletException(GizletError.DiskNotEligible, "fixed disk");
                 var lockedVolumes = disk.Volumes.Select(v => v.GuidPath).ToHashSet(StringComparer.OrdinalIgnoreCase);
                 if (DiskEnumerator.VolumesOf(facts.Number).Any(v => !lockedVolumes.Contains(v.GuidPath))) throw new GizletException(GizletError.DiskChanged, "a volume appeared");

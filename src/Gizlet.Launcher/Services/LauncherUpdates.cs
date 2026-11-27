@@ -28,7 +28,7 @@ sealed class LauncherUpdates
     public LauncherUpdates(Launcher launcher)
     {
         this.launcher = launcher;
-        checker = new UpdateChecker(launcher.Http, Launcher.Version, launcher.Architecture, SshPublicKey.Parse(Launcher.UpdateKey));
+        checker = new UpdateChecker(launcher.Http, Launcher.Version, Launcher.Architecture, SshPublicKey.Parse(Launcher.UpdateKey));
     }
 
     public UpdateState State { get; private set; }

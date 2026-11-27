@@ -22,9 +22,9 @@ public static unsafe class DiskEnumerator
         var volumes = Volumes();
         var protectedVolumes = ProtectedVolumes(protectedPaths ?? []);
         var disks = new List<DiskInfo>();
-        foreach (var path in DiskInterfaces())
+        foreach (var (path, arrived) in DiskInterfaces())
         {
-            if (Describe(path, volumes, protectedVolumes) is { } disk) disks.Add(disk);
+            if (Describe(path, volumes, protectedVolumes) is { } disk) disks.Add(disk with { ArrivedAt = arrived });
         }
         disks.Sort((a, b) => a.Number.CompareTo(b.Number));
         return disks;
@@ -148,11 +148,12 @@ public static unsafe class DiskEnumerator
         return Encoding.ASCII.GetString(descriptor, offset, end - offset).Trim();
     }
 
-    static List<string> DiskInterfaces()
+    /// <summary>Every present disk's interface path, with when its device last arrived.</summary>
+    static List<(string Path, long? Arrived)> DiskInterfaces()
     {
-        var paths = new List<string>();
+        var found = new List<(string, long?)>();
         var devices = Native.SetupDiGetClassDevs(Native.DiskInterface, 0, 0, Native.DigcfPresent | Native.DigcfDeviceInterface);
-        if (devices == -1) return paths;
+        if (devices == -1) return found;
         try
         {
             for (uint index = 0; ; index++)
@@ -162,12 +163,16 @@ public static unsafe class DiskEnumerator
                 Native.SetupDiGetDeviceInterfaceDetail(devices, ref data, null, 0, out var required, 0);
                 if (required is < 8 or > 4096) continue;
                 var buffer = new byte[required];
+                var info = new Native.DevInfoData { Size = (uint)sizeof(Native.DevInfoData) };
                 fixed (byte* detail = buffer)
                 {
                     // SP_DEVICE_INTERFACE_DETAIL_DATA_W's cbSize is 8 on 64-bit Windows.
                     *(uint*)detail = 8;
-                    if (!Native.SetupDiGetDeviceInterfaceDetail(devices, ref data, detail, required, out _, 0)) continue;
-                    paths.Add(new string((char*)(detail + 4)));
+                    if (!Native.SetupDiGetDeviceInterfaceDetail(devices, ref data, detail, required, out _, (nint)(&info))) continue;
+                    long arrived = 0;
+                    var ok = Native.SetupDiGetDeviceProperty(devices, ref info, Native.LastArrivalDate, out var type, &arrived, 8, out _, 0)
+                        && type == Native.DevPropTypeFiletime && arrived > 0;
+                    found.Add((new string((char*)(detail + 4)), ok ? arrived : null));
                 }
             }
         }
@@ -175,8 +180,12 @@ public static unsafe class DiskEnumerator
         {
             Native.SetupDiDestroyDeviceInfoList(devices);
         }
-        return paths;
+        return found;
     }
+
+    /// <summary>When the disk at a device interface path last arrived, or null when it is not present.</summary>
+    public static long? ArrivalOf(string devicePath) =>
+        DiskInterfaces().FirstOrDefault(d => string.Equals(d.Path, devicePath, StringComparison.OrdinalIgnoreCase)).Arrived;
 
     /// <summary>Every volume, the disks it lies on, and whether it is a system volume.</summary>
     static List<(DiskVolume Volume, HashSet<int> Disks, bool System)> Volumes()

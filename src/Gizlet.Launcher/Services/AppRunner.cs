@@ -1,5 +1,7 @@
 using System.Collections.Concurrent;
+using System.ComponentModel;
 using System.Diagnostics;
+using Gizlet.Core.Packages;
 using Gizlet.Core.Library;
 using Microsoft.UI.Dispatching;
 
@@ -39,15 +41,58 @@ sealed class AppRunner(Launcher launcher)
         start.Environment["GIZLET_SWAP_AB"] = "0";
         start.Environment["GIZLET_PROFILE"] = launcher.Profile.Id;
         var process = Process.Start(start) ?? throw new InvalidOperationException(app.Id);
+        Track(app.Id, process);
+        launcher.ChangeSettings(s => s with { Recent = [app.Id, .. s.Recent.Where(r => r != app.Id).Take(49)] }, rebuild: false);
+    }
+
+    void Track(string id, Process process)
+    {
         process.EnableRaisingEvents = true;
         process.Exited += (_, _) => dispatcher.TryEnqueue(() =>
         {
-            running.TryRemove(new KeyValuePair<string, Process>(app.Id, process));
+            running.TryRemove(new KeyValuePair<string, Process>(id, process));
             process.Dispose();
             launcher.RaiseAppsChanged();
         });
-        running[app.Id] = process;
-        launcher.ChangeSettings(s => s with { Recent = [app.Id, .. s.Recent.Where(r => r != app.Id).Take(49)] }, rebuild: false);
+        running[id] = process;
+    }
+
+    /// <summary>
+    /// Finds apps still running from an earlier Launcher (closed, or updated): this user's processes
+    /// whose program is in <c>device/apps/&lt;id&gt;/</c>, so profiles are not switched under them and
+    /// no second copy shares their saves.
+    /// </summary>
+    public void Rediscover()
+    {
+        var apps = Path.TrimEndingDirectorySeparator(launcher.Layout.Apps) + Path.DirectorySeparatorChar;
+        foreach (var process in Process.GetProcesses())
+        {
+            string? path = null;
+            try
+            {
+                path = process.MainModule?.FileName;
+            }
+            catch (Exception e) when (e is Win32Exception or InvalidOperationException or NotSupportedException)
+            {
+            }
+            var id = path is not null && path.StartsWith(apps, StringComparison.OrdinalIgnoreCase)
+                ? path[apps.Length..].Split(Path.DirectorySeparatorChar)[0]
+                : null;
+            if (id is null || !PackageManifest.IsValidId(id) || running.ContainsKey(id) || HasExited(process))
+            {
+                process.Dispose();
+                continue;
+            }
+            try
+            {
+                Track(id, process);
+            }
+            catch (Exception e) when (e is Win32Exception or InvalidOperationException)
+            {
+                process.Dispose();
+            }
+        }
+        dispatcher.TryEnqueue(launcher.RaiseAppsChanged);
     }
 
     static bool HasExited(Process process)

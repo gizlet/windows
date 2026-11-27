@@ -150,6 +150,7 @@ public class FlashTests
         Product = "SD Card",
         Serial = "123",
         MediaChangeCount = 4,
+        ArrivedAt = 134_000_000_000_000_000,
         Volumes = [new DiskVolume { GuidPath = @"\\?\Volume{1}\", MountPoint = @"E:\", Label = "BOOT", FileSystem = "FAT32", Serial = 0xABCD }],
     };
 
@@ -165,6 +166,7 @@ public class FlashTests
         Assert.NotNull(DiskRules.Refusal(Card() with { RemovableMedia = false }));
         // Without a media change count a card taken out and put back could not be noticed.
         Assert.NotNull(DiskRules.Refusal(Card() with { MediaChangeCount = null }));
+        Assert.NotNull(DiskRules.Refusal(Card() with { ArrivedAt = null }));
     }
 
     [Fact]
@@ -173,6 +175,8 @@ public class FlashTests
         var chosen = DiskIdentity.Of(Card());
         Assert.True(chosen.SameAs(DiskIdentity.Of(Card())));
         Assert.False(chosen.SameAs(DiskIdentity.Of(Card() with { MediaChangeCount = 5 })));
+        // The whole reader unplugged and plugged in again, its counter reset to the same value.
+        Assert.False(chosen.SameAs(DiskIdentity.Of(Card() with { ArrivedAt = 134_000_000_000_000_001 })));
         Assert.False(chosen.SameAs(DiskIdentity.Of(Card() with { Number = 4 })));
         Assert.False(chosen.SameAs(DiskIdentity.Of(Card() with { Size = 64_000_000_000 })));
         Assert.False(chosen.SameAs(DiskIdentity.Of(Card() with { Volumes = [new DiskVolume { GuidPath = @"\\?\Volume{2}\", Serial = 1 }] })));
