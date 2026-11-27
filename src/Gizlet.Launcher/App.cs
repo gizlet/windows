@@ -24,9 +24,9 @@ sealed partial class App : Application
 
     public static new App? Current { get; private set; }
 
-    public MainWindow? Window { get; private set; }
+    internal MainWindow? Window { get; private set; }
 
-    public Services.Launcher? Launcher { get; private set; }
+    internal Services.Launcher? Launcher { get; private set; }
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
