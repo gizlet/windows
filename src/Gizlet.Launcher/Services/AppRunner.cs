@@ -91,9 +91,14 @@ sealed class AppRunner
             if (!found.TryGetValue(id, out var job)) found[id] = job = AppJob.Found();
             job.Add(process);
         }
+        // An app started from this Launcher meanwhile keeps its job, and takes the found ones in.
         foreach (var (id, job) in found)
         {
-            if (!running.TryAdd(id, job)) job.Dispose();
+            running.AddOrUpdate(id, job, (_, existing) =>
+            {
+                existing.Merge(job);
+                return existing;
+            });
         }
         dispatcher.TryEnqueue(launcher.RaiseAppsChanged);
     }

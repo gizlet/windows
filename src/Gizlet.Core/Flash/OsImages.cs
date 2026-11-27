@@ -183,9 +183,16 @@ public sealed partial class OsImages(HttpClient http, SshPublicKey trusted, stri
     {
         var partial = path + ".partial";
         var have = File.Exists(partial) ? new FileInfo(partial).Length : 0;
-        using var request = new HttpRequestMessage(HttpMethod.Get, url);
-        if (have > 0) request.Headers.Range = new RangeHeaderValue(have, null);
-        using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+        var response = await SendAsync(url, have, cancellationToken).ConfigureAwait(false);
+        // A partial download cut short after its last byte asks for nothing more: start again.
+        if (response.StatusCode == System.Net.HttpStatusCode.RequestedRangeNotSatisfiable && have > 0)
+        {
+            response.Dispose();
+            File.Delete(partial);
+            have = 0;
+            response = await SendAsync(url, 0, cancellationToken).ConfigureAwait(false);
+        }
+        using var answer = response;
         response.EnsureSuccessStatusCode();
         CheckFinal(response, tag);
         var append = have > 0 && response.StatusCode == System.Net.HttpStatusCode.PartialContent;
@@ -206,6 +213,13 @@ public sealed partial class OsImages(HttpClient http, SshPublicKey trusted, stri
             }
         }
         File.Move(partial, path, overwrite: true);
+    }
+
+    async Task<HttpResponseMessage> SendAsync(Uri url, long from, CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        if (from > 0) request.Headers.Range = new RangeHeaderValue(from, null);
+        return await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
     }
 
     static async Task<CardImage> UnpackAsync(string packed, string raw, Action<double> progress, CancellationToken cancellationToken)

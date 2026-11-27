@@ -3,7 +3,7 @@
 // let it save, then check that the saves and favourites are profile A's alone and survive an
 // uninstall and a reinstall.
 //
-//   Gizlet.StoreCheck --query prince --id io.gizlet.littleprince [--gl DIR] [--env NAME=VALUE ...]
+//   Gizlet.StoreCheck --query prince --id io.gizlet.littleprince [--lang en|zh-CN] [--gl DIR] [--env NAME=VALUE ...]
 //
 // --gl copies the OpenGL DLLs in DIR (Mesa's llvmpipe on GPU-less CI runners) next to the app's
 // entry; --env adds variables for the app, such as a scripted replay.
@@ -18,6 +18,9 @@ string? Arg(string name) => Array.IndexOf(args, name) is var i and >= 0 && i + 1
 var query = Arg("--query") ?? throw new ArgumentException("--query");
 var id = Arg("--id") ?? throw new ArgumentException("--id");
 var gl = Arg("--gl");
+// GIZLET_LANG, as the Launcher sets it from profile A's language.
+var language = Arg("--lang") ?? "en";
+if (language is not ("en" or "zh-CN")) throw new ArgumentException("--lang is en or zh-CN");
 var env = args.Select((a, i) => (a, i)).Where(p => p.a == "--env" && p.i + 1 < args.Length).Select(p => args[p.i + 1].Split('=', 2)).ToList();
 
 var root = Path.Combine(Path.GetTempPath(), "gizlet-store-check-" + Guid.NewGuid().ToString("N"));
@@ -54,7 +57,7 @@ if (gl is not null)
 // Launch in profile A -> save.
 profiles.SaveSettings(a.Id, profiles.Settings(a.Id) with { Favorites = [app.Id] });
 var savesA = profiles.SaveDirectory(a.Id, app.Id);
-var start = AppLaunch.StartInfo(app, a.Id, savesA, "en");
+var start = AppLaunch.StartInfo(app, a.Id, savesA, language);
 foreach (var pair in env) start.Environment[pair[0]] = pair[1];
 start.RedirectStandardOutput = start.RedirectStandardError = true;
 using (var process = Process.Start(start)!)

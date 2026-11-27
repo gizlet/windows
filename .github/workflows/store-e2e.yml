@@ -57,7 +57,7 @@ jobs:
         shell: pwsh
         run: |
           dotnet run --project tools/Gizlet.StoreCheck --configuration Release -- `
-            --query prince --id io.gizlet.littleprince --gl $env:GIZLET_GL `
+            --query prince --id io.gizlet.littleprince --lang zh-CN --gl $env:GIZLET_GL `
             --env "LITTLEPRINCE_SCRIPT=$env:GIZLET_REPLAY" --env LITTLEPRINCE_MUTE=1 --env LITTLEPRINCE_WINDOW=640x480 `
             --env GALLIUM_DRIVER=llvmpipe
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
