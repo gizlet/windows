@@ -40,7 +40,8 @@ On Windows, `scripts/ci.ps1` runs what CI runs: every test, an unsigned installe
 | `tests/Gizlet.Core.Tests/` | Unit tests, including the ext4 grow against gizlet/os's layout and the release manifest the Launcher accepts |
 | `tests/Gizlet.Windows.Tests/` | Tests against the real Windows APIs, skipped elsewhere |
 | `installer/` | The Inno Setup script |
-| `scripts/` | `ci.ps1`, `package.ps1`, `install-inno.ps1` |
+| `scripts/` | `ci.ps1`, `package.ps1`, `install-inno.ps1`, `check-imports.ps1` |
+| `tools/Gizlet.StoreCheck/` | The Store end-to-end check |
 | `devops/` | The release script, signing setup, the update key's public half and the encrypted release secrets |
 | `docs/releases/` | Each release's notes, `<tag>.en.md` and `<tag>.zh-CN.md`, shown in the Launcher's update banner |
 
@@ -54,6 +55,7 @@ Follows the [gizlet/.github](https://github.com/gizlet/.github) setup. Pull requ
 | `codex-review.yml` | The `Codex Code Review` check, with review guidance for card-write targets, the UAC boundary, update verification and profile data. GitHub-hosted. |
 | `ci.yml` | The `CI` check: `scripts/ci.ps1` at the tested commit, with a read-only token and no secrets. |
 | `release.yml` | Releases, below. |
+| `store-e2e.yml` | On `main`, daily and on demand: `tools/Gizlet.StoreCheck` searches the live Store, installs The Little Prince, opens it in one of two profiles with the Launcher's environment (Mesa's software OpenGL on the GPU-less runner), plays its saving replay, and checks that the saves and favourites stay with that profile through an uninstall and a reinstall. Not a pull-request check. |
 
 Builds run on the runner the `RUNNERS` organization variable maps to `windows-x64`, falling back to GitHub's `windows-2025` runner until that key exists. Releases, which decrypt the signing credentials, run on `RUNNERS['windows-x64-release']`, a self-hosted runner that never builds pull requests, or a fresh GitHub-hosted runner without it. Comment-triggered workflows run their copy on `main`, so a pull request that changes them is tested by the old ones.
 

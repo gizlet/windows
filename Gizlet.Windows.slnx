@@ -5,6 +5,9 @@
     <Project Path="src/Gizlet.Launcher/Gizlet.Launcher.csproj" />
     <Project Path="src/Gizlet.FlashHelper/Gizlet.FlashHelper.csproj" />
   </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/Gizlet.StoreCheck/Gizlet.StoreCheck.csproj" />
+  </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Gizlet.Core.Tests/Gizlet.Core.Tests.csproj" />
     <Project Path="tests/Gizlet.Windows.Tests/Gizlet.Windows.Tests.csproj" />

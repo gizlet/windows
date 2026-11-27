@@ -29,17 +29,7 @@ sealed class AppRunner(Launcher launcher)
             return;
         }
         var saves = launcher.Profiles.SaveDirectory(launcher.Profile.Id, app.Id);
-        var start = new ProcessStartInfo(app.EntryPath)
-        {
-            WorkingDirectory = app.Directory,
-            UseShellExecute = false,
-        };
-        start.Environment["GIZLET_APP_ID"] = app.Id;
-        start.Environment["GIZLET_APP_DIR"] = app.Directory;
-        start.Environment["GIZLET_SAVE_DIR"] = saves;
-        start.Environment["GIZLET_LANG"] = S.Language;
-        start.Environment["GIZLET_SWAP_AB"] = "0";
-        start.Environment["GIZLET_PROFILE"] = launcher.Profile.Id;
+        var start = AppLaunch.StartInfo(app, launcher.Profile.Id, saves, S.Language);
         var process = Process.Start(start) ?? throw new InvalidOperationException(app.Id);
         Track(app.Id, process);
         launcher.ChangeSettings(s => s with { Recent = [app.Id, .. s.Recent.Where(r => r != app.Id).Take(49)] }, rebuild: false);
