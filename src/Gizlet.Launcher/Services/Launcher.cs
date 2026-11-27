@@ -123,7 +123,6 @@ sealed class Launcher
     {
         await Task.Run(() => Library.Uninstall(id, Runner.IsRunning));
         AppUpdates.Forget(id);
-        if (Settings.Favorites.Contains(id)) ToggleFavorite(id);
         RaiseAppsChanged();
     }
 

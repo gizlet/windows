@@ -12,7 +12,9 @@ namespace Gizlet.FlashHelper;
 /// again and must match what the user confirmed, must be a USB, SD or MMC disk holding no system
 /// volume, no system partition and not the image itself; the image is hashed from the open,
 /// write-locked file the write then reads. Progress goes to the Launcher's named pipe, one JSON
-/// line each; when the pipe goes away before writing starts, nothing is written.
+/// line each; when the pipe goes away before writing starts, nothing is written. It never touches
+/// a filesystem, and it is compiled ahead of time into one executable, so everything it runs is
+/// covered by its signature.
 /// </summary>
 static class Program
 {
@@ -163,11 +165,6 @@ sealed class Flasher(FlashRequest request, Reporter report)
                 {
                 }
             }
-            if (request.Official && request.Panel == R36sPanel.V30Panel4)
-            {
-                report.Send(new FlashEvent { Stage = FlashStage.Configuring });
-                ConfigurePanel4(disk.Number);
-            }
         }
     }
 
@@ -198,30 +195,5 @@ sealed class Flasher(FlashRequest request, Reporter report)
         if (disk is null || !DiskIdentity.Of(disk).SameAs(request.Disk)) throw new GizletException(GizletError.DiskChanged, $"disk {request.Disk.Number}");
         if (DiskRules.Refusal(disk, request.ImageSize) is { } refusal) throw new GizletException(GizletError.DiskNotEligible, refusal);
         return disk;
-    }
-
-    /// <summary>
-    /// Selects the Panel 4 overlay on the freshly written boot partition: copies
-    /// <c>r36s-v30-panel4.dtbo</c> to <c>mipi-panel.dtbo</c>, as gizlet/os's writer does.
-    /// </summary>
-    static void ConfigurePanel4(int number)
-    {
-        for (var attempt = 0; attempt < 40; attempt++)
-        {
-            var disk = DiskEnumerator.List().FirstOrDefault(d => d.Number == number);
-            var boot = disk?.Volumes.FirstOrDefault(v => string.Equals(v.Label, "GIZLETBOOT", StringComparison.OrdinalIgnoreCase));
-            if (boot is not null)
-            {
-                var root = boot.MountPoint ?? boot.GuidPath;
-                var source = Path.Combine(root, PanelDetector.Panel4Overlay);
-                if (File.Exists(source))
-                {
-                    File.Copy(source, Path.Combine(root, PanelDetector.OverlayFile), overwrite: true);
-                    return;
-                }
-            }
-            Thread.Sleep(500);
-        }
-        throw new GizletException(GizletError.DiskWriteFailed, "panel4");
     }
 }

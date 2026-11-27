@@ -286,7 +286,7 @@ sealed class FlashPage : LauncherPage
             }
 
             // 4. The elevated helper checks it all again and writes.
-            await Launcher.Flash.WriteAsync(confirmed, image, Official ? Panel : null, flashEvent => DispatcherQueue.TryEnqueue(() =>
+            await Launcher.Flash.WriteAsync(confirmed, image, flashEvent => DispatcherQueue.TryEnqueue(() =>
             {
                 double? fraction = flashEvent.Total > 0 ? (double)flashEvent.Done / flashEvent.Total : null;
                 switch (flashEvent.Stage)
@@ -297,6 +297,21 @@ sealed class FlashPage : LauncherPage
                     case FlashStage.Configuring: Report(S.StageConfiguring, null); break;
                 }
             }), () => DispatcherQueue.TryEnqueue(() => Report(S.AskingPermission, null)), token);
+            if (image.Official && Panel == R36sPanel.V30Panel4)
+            {
+                Report(S.StageConfiguring, null);
+                try
+                {
+                    await FlashSession.ConfigurePanel4Async(confirmed, CancellationToken.None);
+                }
+                catch (Exception e) when (e is GizletException or IOException or UnauthorizedAccessException)
+                {
+                    progress.Visibility = Visibility.Collapsed;
+                    progressText.Text = "";
+                    Show(InfoBarSeverity.Warning, S.Panel4Manual);
+                    return;
+                }
+            }
             progress.Visibility = Visibility.Collapsed;
             progressText.Text = "";
             Show(InfoBarSeverity.Success, S.FlashDone);

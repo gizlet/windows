@@ -1,0 +1,6 @@
+# Signed fixtures and card data are compared byte for byte: never convert their line endings.
+tests/**/Fixtures/** -text
+*.img binary
+*.gz binary
+*.ico binary
+*.png binary

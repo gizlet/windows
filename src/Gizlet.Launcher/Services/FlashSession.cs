@@ -38,7 +38,7 @@ sealed class FlashSession(Launcher launcher)
     /// Writes <paramref name="image"/> over the card confirmed as <paramref name="confirmed"/>.
     /// Returns normally when the card was written and read back; throws otherwise.
     /// </summary>
-    public async Task WriteAsync(DiskIdentity confirmed, CardImage image, R36sPanel? panel, Action<FlashEvent> progress, Action asking, CancellationToken cancellationToken)
+    public async Task WriteAsync(DiskIdentity confirmed, CardImage image, Action<FlashEvent> progress, Action asking, CancellationToken cancellationToken)
     {
         if (Busy) throw new InvalidOperationException("busy");
         Busy = true;
@@ -55,8 +55,6 @@ sealed class FlashSession(Launcher launcher)
                 ImagePath = image.Path,
                 ImageSize = image.Size,
                 ImageSha256 = image.Sha256,
-                Official = image.Official,
-                Panel = image.Official ? panel : null,
                 Pipe = pipeName,
                 Language = S.Language,
             };
@@ -117,4 +115,34 @@ sealed class FlashSession(Launcher launcher)
             Busy = false;
         }
     }
+
+    /// <summary>
+    /// Selects the Panel 4 overlay on a card just written: copies <c>r36s-v30-panel4.dtbo</c> to
+    /// <c>mipi-panel.dtbo</c> on its boot partition, as gizlet/os's writer does. Runs as the user,
+    /// on the FAT volume named GIZLETBOOT of the same device (path, serial and size) that was written.
+    /// </summary>
+    public static Task ConfigurePanel4Async(DiskIdentity written, CancellationToken cancellationToken) => Task.Run(async () =>
+    {
+        for (var attempt = 0; attempt < 40; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var disk = DiskEnumerator.List().FirstOrDefault(d =>
+                string.Equals(d.DevicePath, written.DevicePath, StringComparison.OrdinalIgnoreCase)
+                && d.Serial == written.Serial && d.Size == written.Size);
+            var boot = disk?.Volumes.FirstOrDefault(v => string.Equals(v.Label, "GIZLETBOOT", StringComparison.OrdinalIgnoreCase)
+                && v.FileSystem is { } fs && fs.StartsWith("FAT", StringComparison.OrdinalIgnoreCase));
+            if (disk is not null && DiskRules.Refusal(disk) is null && boot is not null)
+            {
+                var root = boot.MountPoint ?? boot.GuidPath;
+                var source = new FileInfo(Path.Combine(root, PanelDetector.Panel4Overlay));
+                if (source.Exists && !source.Attributes.HasFlag(FileAttributes.ReparsePoint) && source.Length < 1 << 20)
+                {
+                    await File.WriteAllBytesAsync(Path.Combine(root, PanelDetector.OverlayFile), await File.ReadAllBytesAsync(source.FullName, cancellationToken), cancellationToken);
+                    return;
+                }
+            }
+            await Task.Delay(500, cancellationToken);
+        }
+        throw new GizletException(GizletError.DiskWriteFailed, "panel 4 overlay");
+    }, cancellationToken);
 }

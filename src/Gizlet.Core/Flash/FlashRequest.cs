@@ -1,10 +1,13 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Gizlet.Core.Flash;
 
 /// <summary>
 /// What the Launcher asks the elevated helper to write, passed on its command line. The helper
 /// trusts none of it: it identifies the disk again, hashes the image itself, and applies its own rules.
+/// It only ever writes the raw disk; anything done through the card's filesystem afterwards (the
+/// panel overlay) is done by the unelevated Launcher.
 /// </summary>
 public sealed record FlashRequest
 {
@@ -13,14 +16,11 @@ public sealed record FlashRequest
     public string ImagePath { get; init; } = "";
     public long ImageSize { get; init; }
     public string ImageSha256 { get; init; } = "";
-    /// <summary>A published image, whose boot partition the panel choice configures.</summary>
-    public bool Official { get; init; }
-    public R36sPanel? Panel { get; init; }
     /// <summary>The named pipe the Launcher listens on for progress.</summary>
     public string Pipe { get; init; } = "";
     public string Language { get; init; } = "en";
 
-    public string Encode() => Convert.ToBase64String(JsonSerializer.SerializeToUtf8Bytes(this, JsonFile.Options))
+    public string Encode() => Convert.ToBase64String(JsonSerializer.SerializeToUtf8Bytes(this, FlashJson.Default.FlashRequest))
         .TrimEnd('=').Replace('+', '-').Replace('/', '_');
 
     public static FlashRequest Decode(string text)
@@ -28,7 +28,7 @@ public sealed record FlashRequest
         if (text.Length > 16_000) throw new FormatException("Request too long");
         var base64 = text.Replace('-', '+').Replace('_', '/');
         base64 += new string('=', (4 - base64.Length % 4) % 4);
-        var request = JsonSerializer.Deserialize<FlashRequest>(Convert.FromBase64String(base64), JsonFile.Options)
+        var request = JsonSerializer.Deserialize(Convert.FromBase64String(base64), FlashJson.Default.FlashRequest)
             ?? throw new FormatException("Empty request");
         if (request.Schema != 1) throw new FormatException($"Request schema {request.Schema}");
         if (request.ImageSha256.Length != 64 || !request.ImageSha256.All(Uri.IsHexDigit)) throw new FormatException("Bad image hash");
@@ -51,13 +51,13 @@ public sealed record FlashEvent
     public GizletError? Error { get; init; }
     public string? Detail { get; init; }
 
-    public string ToLine() => JsonSerializer.Serialize(this, JsonFile.Compact);
+    public string ToLine() => JsonSerializer.Serialize(this, FlashJson.Default.FlashEvent);
 
     public static FlashEvent? FromLine(string line)
     {
         try
         {
-            return JsonSerializer.Deserialize<FlashEvent>(line, JsonFile.Options);
+            return JsonSerializer.Deserialize(line, FlashJson.Default.FlashEvent);
         }
         catch (JsonException)
         {
@@ -65,3 +65,10 @@ public sealed record FlashEvent
         }
     }
 }
+
+/// <summary>Source-generated, so the helper can be compiled ahead of time.</summary>
+[JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.SnakeCaseLower, UseStringEnumConverter = true,
+    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
+[JsonSerializable(typeof(FlashRequest))]
+[JsonSerializable(typeof(FlashEvent))]
+internal sealed partial class FlashJson : JsonSerializerContext;

@@ -2,7 +2,8 @@
 #
 #   scripts/package.ps1 -Version 1.2.3 [-Arch x64|arm64] [-Output artifacts]
 #
-# Publishes Gizlet.Launcher and Gizlet.FlashHelper self-contained into one folder, compiles
+# Publishes Gizlet.Launcher self-contained and Gizlet.FlashHelper as one Native AOT executable
+# into one folder, checks that the elevated helper imports only DLLs Windows loads from System32, compiles
 # installer/GizletLauncher.iss with Inno Setup 7 and writes
 # <Output>/installer/GizletSetup-<version>-<arch>.exe.
 #
@@ -32,10 +33,20 @@ function Invoke([string]$file, [string[]]$arguments) {
     if ($LASTEXITCODE -ne 0) { throw "$file exited with $LASTEXITCODE" }
 }
 
-$common = @('--configuration', 'Release', '--runtime', $rid, '--self-contained', 'true',
-    "-p:Version=$Version", "-p:Platform=$Arch", '-p:PublishReadyToRun=true', '--output', $publish)
-Invoke dotnet (@('publish', 'src/Gizlet.Launcher/Gizlet.Launcher.csproj') + $common)
-Invoke dotnet (@('publish', 'src/Gizlet.FlashHelper/Gizlet.FlashHelper.csproj') + $common)
+Invoke dotnet @('publish', 'src/Gizlet.Launcher/Gizlet.Launcher.csproj', '--configuration', 'Release', '--runtime', $rid,
+    '--self-contained', 'true', "-p:Version=$Version", "-p:Platform=$Arch", '-p:PublishReadyToRun=true', '--output', $publish)
+
+# The helper runs elevated from this user-writable folder, so it is one native executable with
+# nothing beside it to replace, and only System32 DLLs (Windows' KnownDLLs and API sets) load into it.
+$helperOut = Join-Path $output "publish/helper-$rid"
+Remove-Item -Recurse -Force $helperOut -ErrorAction SilentlyContinue
+Invoke dotnet @('publish', 'src/Gizlet.FlashHelper/Gizlet.FlashHelper.csproj', '--configuration', 'Release', '--runtime', $rid,
+    "-p:Version=$Version", '--output', $helperOut)
+Copy-Item -LiteralPath (Join-Path $helperOut 'Gizlet.FlashHelper.exe') -Destination $publish -Force
+foreach ($stale in 'Gizlet.FlashHelper.dll', 'Gizlet.FlashHelper.deps.json', 'Gizlet.FlashHelper.runtimeconfig.json') {
+    if (Test-Path (Join-Path $publish $stale)) { throw "$stale must not be shipped beside the helper" }
+}
+& (Join-Path $PSScriptRoot 'check-imports.ps1') (Join-Path $publish 'Gizlet.FlashHelper.exe')
 foreach ($exe in 'Gizlet.Launcher.exe', 'Gizlet.FlashHelper.exe') {
     if (-not (Test-Path (Join-Path $publish $exe))) { throw "$exe was not published" }
 }

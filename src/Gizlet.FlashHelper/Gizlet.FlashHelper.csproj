@@ -7,6 +7,11 @@
     <AssemblyName>Gizlet.FlashHelper</AssemblyName>
     <RootNamespace>Gizlet.FlashHelper</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- One native executable: no managed or runtime files beside it that a user could replace. -->
+    <PublishAot>true</PublishAot>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <UseSystemResourceKeys>true</UseSystemResourceKeys>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Gizlet.Windows/Gizlet.Windows.csproj" />

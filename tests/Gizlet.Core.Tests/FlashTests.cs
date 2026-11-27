@@ -161,6 +161,10 @@ public class FlashTests
         Assert.NotNull(DiskRules.Refusal(Card() with { Bus = DiskBus.Other }));
         Assert.NotNull(DiskRules.Refusal(Card() with { Size = 0 }));
         Assert.NotNull(DiskRules.Refusal(Card(), imageBytes: 64_000_000_000));
+        // An external hard disk or SSD on USB is never a card.
+        Assert.NotNull(DiskRules.Refusal(Card() with { RemovableMedia = false }));
+        // Without a media change count a card taken out and put back could not be noticed.
+        Assert.NotNull(DiskRules.Refusal(Card() with { MediaChangeCount = null }));
     }
 
     [Fact]
@@ -183,8 +187,6 @@ public class FlashTests
             ImagePath = @"C:\Users\me\AppData\Local\Gizlet\device\images\v0.4.4\card.img",
             ImageSize = 486_539_264,
             ImageSha256 = new string('a', 64),
-            Official = true,
-            Panel = R36sPanel.V30Panel4,
             Pipe = "gizlet-flash-0123456789abcdef",
             Language = "zh-CN",
         };

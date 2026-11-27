@@ -88,13 +88,16 @@ public static class DiskRules
     public const long LargeCard = 256_000_000_000;
 
     /// <summary>
-    /// Why the disk may not be written, or null when it may: only USB, SD or MMC disks, never one
-    /// holding Windows or the system, and large enough for the image.
+    /// Why the disk may not be written, or null when it may: only removable media in a USB, SD or
+    /// MMC reader that tells when its card is changed, never a disk holding Windows or the system,
+    /// and large enough for the image.
     /// </summary>
     public static string? Refusal(DiskInfo disk, long imageBytes = 0)
     {
         if (disk.HoldsSystem) return "holds the system";
         if (disk.Bus is not (DiskBus.Usb or DiskBus.Sd or DiskBus.Mmc)) return "is not a USB or SD card reader";
+        if (!disk.RemovableMedia) return "is a fixed disk, not a card";
+        if (disk.MediaChangeCount is null) return "cannot tell when its card is changed";
         if (disk.Size <= 0) return "has no media";
         if (disk.BytesPerSector is not (512 or 4096)) return $"has {disk.BytesPerSector}-byte sectors";
         if (imageBytes > disk.Size) return "is smaller than the image";

@@ -84,22 +84,43 @@ public static unsafe class DiskEnumerator
     }
 
     /// <summary>
-    /// Whether the disk holds an EFI system, Microsoft reserved or recovery partition. Reading the
-    /// layout needs read access, so the elevated helper checks this before it writes.
+    /// Whether the disk may hold an EFI system, Microsoft reserved or recovery partition (GPT types,
+    /// or MBR types 0xEF and 0x27). Reading the layout needs read access, so the elevated helper
+    /// checks this before it writes. A layout that cannot be read counts as holding one.
     /// </summary>
     public static bool HasSystemPartitions(Microsoft.Win32.SafeHandles.SafeFileHandle disk)
     {
-        var layout = new byte[48 + 144 * 128];
-        var length = Native.Ioctl(disk, Native.IoctlDiskGetDriveLayoutEx, [], layout, out _);
-        if (length < 48) return false;
-        if (BinaryPrimitives.ReadInt32LittleEndian(layout) != 1) return false;
-        var count = BinaryPrimitives.ReadInt32LittleEndian(layout.AsSpan(4));
-        for (var i = 0; i < count && 48 + (i + 1) * 144 <= length; i++)
+        const int ErrorInsufficientBuffer = 122;
+        const int ErrorMoreData = 234;
+        for (var entries = 128; entries <= 4096; entries *= 2)
         {
-            var type = new Guid(layout.AsSpan(48 + i * 144 + 32, 16));
-            if (type == EfiSystem || type == MicrosoftReserved || type == WindowsRecovery) return true;
+            var layout = new byte[48 + 144 * entries];
+            var length = Native.Ioctl(disk, Native.IoctlDiskGetDriveLayoutEx, [], layout, out var error);
+            if (length < 0 && error is ErrorInsufficientBuffer or ErrorMoreData) continue;
+            if (length < 48) return true;
+            var style = BinaryPrimitives.ReadInt32LittleEndian(layout);
+            var count = BinaryPrimitives.ReadInt32LittleEndian(layout.AsSpan(4));
+            if (count < 0 || 48 + (long)count * 144 > length) return true;
+            for (var i = 0; i < count; i++)
+            {
+                var entry = layout.AsSpan(48 + i * 144, 144);
+                if (style == 1)
+                {
+                    var type = new Guid(entry.Slice(32, 16));
+                    if (type == EfiSystem || type == MicrosoftReserved || type == WindowsRecovery) return true;
+                }
+                else if (style == 0)
+                {
+                    if (entry[32] is 0xEF or 0x27) return true;
+                }
+                else
+                {
+                    return style != 2;
+                }
+            }
+            return false;
         }
-        return false;
+        return true;
     }
 
     static string DescriptorString(byte[] descriptor, int length, int offsetField)

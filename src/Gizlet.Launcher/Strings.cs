@@ -162,6 +162,8 @@ static class S
     public static string StageWriting => T("Writing…", "正在写入…");
     public static string StageVerifying => T("Reading back to verify…", "正在读回校验…");
     public static string StageConfiguring => T("Setting up the screen…", "正在配置屏幕…");
+    public static string Panel4Manual => T("The card is written, but the screen could not be set up. On the card's GIZLETBOOT drive, copy r36s-v30-panel4.dtbo to mipi-panel.dtbo.",
+        "卡已写好，但屏幕配置失败。请在卡的 GIZLETBOOT 盘上把 r36s-v30-panel4.dtbo 复制为 mipi-panel.dtbo。");
     public static string FlashDone => T("Done. Eject the card, put it in the R36S and switch it on.", "完成。弹出卡，插进 R36S 开机。");
     public static string FlashFailed(string why) => T($"The card was not written: {why}", $"写卡失败：{why}");
     public static string NothingWritten => T("Nothing was written.", "未写入任何内容。");
