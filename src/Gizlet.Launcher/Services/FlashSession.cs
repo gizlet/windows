@@ -1,6 +1,8 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO.Pipes;
+using System.Security.AccessControl;
+using System.Security.Principal;
 using System.Security.Cryptography;
 using Gizlet.Core;
 using Gizlet.Core.Flash;
@@ -35,10 +37,12 @@ sealed class FlashSession(Launcher launcher)
         disk.BootVolume is { } boot ? PanelDetector.FromBootPartition(boot.MountPoint ?? boot.GuidPath, disk.HasGizletOs) : null);
 
     /// <summary>
-    /// Writes <paramref name="image"/> over the card confirmed as <paramref name="confirmed"/>.
-    /// Returns normally when the card was written and read back; throws otherwise.
+    /// Writes <paramref name="image"/> over the card confirmed as <paramref name="confirmed"/>, then,
+    /// for <paramref name="panel4"/>, selects the Panel 4 overlay; busy throughout, so updates and
+    /// closing the window wait. Returns normally when the card was written and read back; throws
+    /// otherwise, <see cref="Panel4Exception"/> when only the overlay failed.
     /// </summary>
-    public async Task WriteAsync(DiskIdentity confirmed, CardImage image, Action<FlashEvent> progress, Action asking, CancellationToken cancellationToken)
+    public async Task WriteAsync(DiskIdentity confirmed, CardImage image, bool panel4, Action<FlashEvent> progress, Action asking, CancellationToken cancellationToken)
     {
         if (Busy) throw new InvalidOperationException("busy");
         Busy = true;
@@ -58,8 +62,7 @@ sealed class FlashSession(Launcher launcher)
                 Pipe = pipeName,
                 Language = S.Language,
             };
-            await using var pipe = new NamedPipeServerStream(pipeName, PipeDirection.InOut, 1, PipeTransmissionMode.Byte,
-                PipeOptions.Asynchronous | PipeOptions.FirstPipeInstance | PipeOptions.CurrentUserOnly);
+            await using var pipe = CreatePipe(pipeName);
             asking();
             Process process;
             try
@@ -76,6 +79,11 @@ sealed class FlashSession(Launcher launcher)
                 using var connect = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 connect.CancelAfter(TimeSpan.FromSeconds(30));
                 await pipe.WaitForConnectionAsync(connect.Token);
+                // Only the helper this Launcher started may report: its process, whoever it runs as.
+                if (!Native.GetNamedPipeClientProcessId(pipe.SafePipeHandle, out var client) || client != (uint)process.Id)
+                {
+                    throw new GizletException(GizletError.DiskWriteFailed, "another process answered on the pipe");
+                }
                 using var reader = new StreamReader(pipe, leaveOpen: true);
                 await using var writer = new StreamWriter(pipe, leaveOpen: true) { AutoFlush = true };
                 await using var stop = cancellationToken.Register(() =>
@@ -100,7 +108,7 @@ sealed class FlashSession(Launcher launcher)
                 switch (last)
                 {
                     case { Stage: FlashStage.Done } when process.ExitCode == 0:
-                        return;
+                        break;
                     case { Stage: FlashStage.Failed, Error: { } error }:
                         throw new GizletException(error, last.Detail ?? "");
                     case { Stage: FlashStage.Failed }:
@@ -109,11 +117,38 @@ sealed class FlashSession(Launcher launcher)
                         throw new GizletException(GizletError.DiskWriteFailed, $"helper exited with {process.ExitCode}");
                 }
             }
+            if (panel4)
+            {
+                progress(new FlashEvent { Stage = FlashStage.Configuring });
+                try
+                {
+                    await ConfigurePanel4Async(confirmed, CancellationToken.None);
+                }
+                catch (Exception e) when (e is GizletException or IOException or UnauthorizedAccessException)
+                {
+                    throw new Panel4Exception(e);
+                }
+            }
         }
         finally
         {
             Busy = false;
         }
+    }
+
+    /// <summary>
+    /// The progress pipe: this user, and elevated administrators. The helper may run as another
+    /// administrator when a standard user enters an administrator's credentials at UAC; an
+    /// unelevated process of that administrator has the Administrators group only to deny. The
+    /// client is checked to be the helper process itself once it connects.
+    /// </summary>
+    static NamedPipeServerStream CreatePipe(string name)
+    {
+        var security = new PipeSecurity();
+        security.AddAccessRule(new PipeAccessRule(WindowsIdentity.GetCurrent().User!, PipeAccessRights.ReadWrite, AccessControlType.Allow));
+        security.AddAccessRule(new PipeAccessRule(new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null), PipeAccessRights.ReadWrite, AccessControlType.Allow));
+        return NamedPipeServerStreamAcl.Create(name, PipeDirection.InOut, 1, PipeTransmissionMode.Byte,
+            PipeOptions.Asynchronous | PipeOptions.FirstPipeInstance, 0, 0, security);
     }
 
     /// <summary>
@@ -146,3 +181,6 @@ sealed class FlashSession(Launcher launcher)
         throw new GizletException(GizletError.DiskWriteFailed, "panel 4 overlay");
     }, cancellationToken);
 }
+
+/// <summary>The card was written and verified, but the Panel 4 overlay could not be selected.</summary>
+sealed class Panel4Exception(Exception inner) : Exception("panel 4 overlay", inner);

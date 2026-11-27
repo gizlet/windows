@@ -80,12 +80,14 @@ sealed class StorePage : LauncherPage
         return loading.Token;
     }
 
+    /// <summary>Shows new content. Builders call <see cref="Fresh"/> first, so the buttons they register stay live.</summary>
     void Set(UIElement element)
     {
-        holders.Clear();
         content.Children.Clear();
         content.Children.Add(element);
     }
+
+    void Fresh() => holders.Clear();
 
     static ProgressRing Spinner() => new() { IsActive = true, Width = 32, Height = 32, Margin = new Thickness(0, 48, 0, 48), HorizontalAlignment = HorizontalAlignment.Center };
 
@@ -98,6 +100,7 @@ sealed class StorePage : LauncherPage
         try
         {
             var featured = await Launcher.Store.FeaturedAsync(token);
+            Fresh();
             var panel = new StackPanel { Spacing = 24 };
             if (featured.Hero.Count > 0) panel.Children.Add(Hero(featured.Hero[0]));
             if (featured.Hero.Count > 1) panel.Children.Add(Shelf(featured.Hero.Skip(1)));
@@ -129,6 +132,7 @@ sealed class StorePage : LauncherPage
         }
         detail = null;
         cursor = null;
+        Fresh();
         results = new StackPanel { Spacing = 4 };
         Set(Ui.Stack(8, Ui.Subtitle(S.Results(query)), results));
         _ = MoreAsync();
@@ -389,6 +393,7 @@ sealed class StorePage : LauncherPage
 
     void ShowDetail(StoreGizlet gizlet)
     {
+        Fresh();
         var name = gizlet.NameIn(S.Language);
         var back = Ui.Button(S.Back, () =>
         {

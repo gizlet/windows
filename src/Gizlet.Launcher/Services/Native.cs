@@ -29,6 +29,10 @@ static partial class Native
         }
     }
 
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool GetNamedPipeClientProcessId(Microsoft.Win32.SafeHandles.SafePipeHandle pipe, out uint processId);
+
     public static void Focus(nint window)
     {
         ShowWindow(window, 9);
