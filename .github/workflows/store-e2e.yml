@@ -1,0 +1,63 @@
+name: Store end to end
+
+# The Launcher's Store path against the live Gizlet Store, on a Windows runner: two profiles,
+# search, install The Little Prince, open it in profile A with the Launcher's environment and
+# play its saving replay (rendered by Mesa's software OpenGL; runners have no GPU), then check
+# that its saves and favourites belong to profile A alone and survive an uninstall. Runs trusted
+# code only: pushes to main, a daily schedule and manual dispatch.
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '23 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  store:
+    name: Search, install, open and save (Windows x64)
+    runs-on: ${{ fromJSON(vars.RUNNERS || '{}')['windows-x64'] || 'windows-2025' }}
+    timeout-minutes: 30
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_NOLOGO: '1'
+      MESA_VERSION: '26.3.1'
+      MESA_SHA256: '64E84CF13D67DD354640BF443ED0445E6A83AFD06A5729F0750B3744D633B3F1'
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          global-json-file: global.json
+      - name: Software OpenGL
+        shell: pwsh
+        run: |
+          $archive = Join-Path $env:RUNNER_TEMP "mesa.7z"
+          Invoke-WebRequest -UseBasicParsing "https://github.com/pal1000/mesa-dist-win/releases/download/$env:MESA_VERSION/mesa3d-$env:MESA_VERSION-release-msvc.7z" -OutFile $archive
+          if ((Get-FileHash -Algorithm SHA256 $archive).Hash -ne $env:MESA_SHA256) { throw 'Mesa download does not match its pinned SHA-256' }
+          $out = Join-Path $env:RUNNER_TEMP 'mesa'
+          7z x $archive "-o$out" x64 -y | Out-Null
+          $gl = Join-Path $env:RUNNER_TEMP 'gl'
+          New-Item -ItemType Directory -Force $gl | Out-Null
+          Get-ChildItem "$out/x64" -Include opengl32.dll, libgallium_wgl.dll, libglapi.dll -Recurse | Copy-Item -Destination $gl
+          if (-not (Test-Path "$gl/opengl32.dll")) { throw 'Mesa opengl32.dll missing' }
+          Add-Content $env:GITHUB_ENV "GIZLET_GL=$gl"
+      - name: The game's own saving replay, at the Store's release
+        shell: pwsh
+        run: |
+          $tag = (Invoke-RestMethod 'https://gizlet.io/api/v1/gizlets/github.com/gizlet/little-prince').tag
+          $replay = Join-Path $env:RUNNER_TEMP 'saves-1-journey.txt'
+          Invoke-WebRequest -UseBasicParsing "https://raw.githubusercontent.com/gizlet/little-prince/$tag/tests/scripts/saves-1-journey.txt" -OutFile $replay
+          Add-Content $env:GITHUB_ENV "GIZLET_REPLAY=$replay"
+      - name: Search, install, open, save
+        shell: pwsh
+        run: |
+          dotnet run --project tools/Gizlet.StoreCheck --configuration Release -- `
+            --query prince --id io.gizlet.littleprince --gl $env:GIZLET_GL `
+            --env "LITTLEPRINCE_SCRIPT=$env:GIZLET_REPLAY" --env LITTLEPRINCE_MUTE=1 --env LITTLEPRINCE_WINDOW=640x480 `
+            --env GALLIUM_DRIVER=llvmpipe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

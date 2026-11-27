@@ -1,0 +1,3 @@
+creation_rules:
+  - path_regex: ^devops/secrets/.*\.enc\.ya?ml$
+    age: age15f40tmyfy6rsh3aqn2fswj0dqw3zg02d2ya6wftwewpqhdky5f2q7ncquv

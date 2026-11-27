@@ -1,0 +1,179 @@
+name: Release
+
+# Push a vMAJOR.MINOR.PATCH tag on a commit in main, with docs/releases/<tag>.en.md (and
+# .zh-CN.md) in that commit. The Windows job builds, tests and Authenticode-signs the Launcher,
+# the flash helper and the installer; the publish job verifies the signatures, signs the update
+# manifest and publishes both to R2 behind gizlet.io/assets. Signing and R2 credentials are decrypted
+# only in these jobs, from devops/secrets/release.enc.yaml; CI that runs pull-request code never
+# has them.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify release tag
+    runs-on: ubuntu-24.04
+    outputs:
+      commit: ${{ steps.tag.outputs.commit }}
+      version: ${{ steps.tag.outputs.version }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: tag
+        shell: bash
+        run: |
+          release_tag='^v(0|[1-9][0-9]{0,8})(\.(0|[1-9][0-9]{0,8})){2}$'
+          [[ "$GITHUB_REF_NAME" =~ $release_tag ]]
+          commit=$(git rev-parse 'HEAD^{commit}')
+          git merge-base --is-ancestor "$commit" refs/remotes/origin/main
+          test -f "docs/releases/$GITHUB_REF_NAME.en.md"
+          printf 'commit=%s\nversion=%s\n' "$commit" "${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build, test and sign (Windows x64)
+    needs: verify
+    # Signing keys are decrypted here, so never on the runner that builds pull requests
+    # (RUNNERS.windows-x64): a dedicated, trusted runner, or a fresh GitHub-hosted one.
+    runs-on: ${{ fromJSON(vars.RUNNERS || '{}')['windows-x64-release'] || 'windows-2025' }}
+    timeout-minutes: 90
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_NOLOGO: '1'
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ needs.verify.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          global-json-file: global.json
+      - name: Test
+        shell: pwsh
+        run: |
+          dotnet test --solution Gizlet.Windows.slnx --configuration Release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./scripts/install-inno.ps1
+      - name: Install SOPS
+        shell: pwsh
+        env:
+          SOPS_VERSION: v3.13.3
+        run: |
+          $binary = "sops-$env:SOPS_VERSION.amd64.exe"
+          $base = "https://github.com/getsops/sops/releases/download/$env:SOPS_VERSION"
+          $dir = Join-Path $env:RUNNER_TEMP 'sops'
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          Invoke-WebRequest -UseBasicParsing "$base/$binary" -OutFile "$dir/sops.exe"
+          $sums = [Text.Encoding]::ASCII.GetString((Invoke-WebRequest -UseBasicParsing "$base/sops-$env:SOPS_VERSION.checksums.txt").Content)
+          $line = $sums -split "`n" | Where-Object { $_ -match "^[0-9a-f]{64}\s+$([regex]::Escape($binary))\s*$" } | Select-Object -First 1
+          if (-not $line -or (Get-FileHash -Algorithm SHA256 "$dir/sops.exe").Hash -ne ($line -split '\s+')[0].ToUpperInvariant()) { throw 'sops checksum mismatch' }
+          Add-Content $env:GITHUB_PATH $dir
+      - name: Build and sign
+        shell: pwsh
+        env:
+          SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}
+          GIZLET_REQUIRE_SIGNATURE: '1'
+        run: |
+          # Only the signing fields: the R2 credentials and the update key stay encrypted here.
+          foreach ($name in 'CODESIGN_PFX_BASE64', 'CODESIGN_PFX_PASSWORD', 'ARTIFACT_SIGNING_ENDPOINT', 'ARTIFACT_SIGNING_ACCOUNT',
+                            'ARTIFACT_SIGNING_PROFILE', 'AZURE_TENANT_ID', 'AZURE_CLIENT_ID', 'AZURE_CLIENT_SECRET') {
+            $value = sops decrypt --extract "[`"$name`"]" devops/secrets/release.enc.yaml 2>$null
+            if ($LASTEXITCODE -eq 0 -and $value) {
+              $text = ($value -join '').Trim()
+              if ($name -ne 'CODESIGN_PFX_BASE64') { Write-Host "::add-mask::$text" }
+              Set-Item "env:$name" $text
+            }
+          }
+          $global:LASTEXITCODE = 0
+          Remove-Item env:SOPS_AGE_KEY
+          ./devops/scripts/signing.ps1
+          try {
+            ./scripts/package.ps1 -Version '${{ needs.verify.outputs.version }}' -Arch x64 -Output "$env:RUNNER_TEMP/release"
+          } finally {
+            Remove-Item -Force "$env:RUNNER_TEMP/codesign.pfx" -ErrorAction SilentlyContinue
+          }
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: installers
+          path: ${{ runner.temp }}/release/installer/GizletSetup-*.exe
+          if-no-files-found: error
+
+  publish:
+    name: Publish to R2
+    needs: [verify, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ needs.verify.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: installers
+          path: ${{ runner.temp }}/installers
+      - name: Install tools
+        shell: bash
+        env:
+          SOPS_VERSION: v3.13.3
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends osslsigncode
+          cd "$RUNNER_TEMP"
+          binary="sops-${SOPS_VERSION}.linux.amd64"
+          base="https://github.com/getsops/sops/releases/download/${SOPS_VERSION}"
+          curl -fsSLO "$base/$binary"
+          curl -fsSLO "$base/sops-${SOPS_VERSION}.checksums.txt"
+          awk -v file="$binary" '$2 == file' "sops-${SOPS_VERSION}.checksums.txt" | sha256sum -c
+          sudo install -m 0755 "$binary" /usr/local/bin/sops
+      - name: Sign the manifest and publish
+        shell: bash
+        env:
+          SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}
+          RELEASE_COMMIT: ${{ needs.verify.outputs.commit }}
+        run: |
+          set -o pipefail
+          sops decrypt --output-type json devops/secrets/release.enc.yaml |
+            python3 devops/scripts/release.py "$GITHUB_REF_NAME" "$RELEASE_COMMIT" \
+              "$RUNNER_TEMP/installers" "$RUNNER_TEMP/release"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: update-manifest
+          path: ${{ runner.temp }}/release/update.json
+
+  github-release:
+    name: Attach to GitHub Releases
+    needs: [verify, publish]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: ${{ runner.temp }}/assets
+          merge-multiple: true
+      - name: Create the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd "$RUNNER_TEMP/assets"
+          notes="Installers are served from https://gizlet.io/assets/windows/releases/$GITHUB_REF_NAME/. The Launcher updates itself from https://gizlet.io/assets/windows/update.json."
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" GizletSetup-*.exe update.json --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" GizletSetup-*.exe update.json --repo "$GITHUB_REPOSITORY" \
+              --verify-tag --title "Gizlet Launcher $GITHUB_REF_NAME" --notes "$notes"
+          fi

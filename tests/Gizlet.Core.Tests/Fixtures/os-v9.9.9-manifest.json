@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "tag": "v9.9.9",
+  "commit": "0000000000000000000000000000000000000000",
+  "boards": {
+    "gameconsole": {
+      "r36s": {
+        "image": {
+          "path": "boards/gameconsole/r36s/gizlet-os-r36s.img.gz",
+          "checksum": "boards/gameconsole/r36s/SHA256SUMS",
+          "sha256": "d1cf0d04823eeead7c513e2d16b7d34ae1b69d5c5adea7b5e8cb7d35163d60e4",
+          "bytes": 180
+        }
+      }
+    }
+  }
+}
