@@ -47,19 +47,22 @@ jobs:
       review-instructions: >-
         Gizlet Launcher for Windows: a C#/.NET WinUI 3 desktop app that installs
         and runs Gizlet Store packages (.gzl), keeps per-profile saves and
-        settings, updates itself from a signed manifest on dl.gizlet.io, and
+        settings, updates itself from a signed manifest on gizlet.io, and
         flashes Gizlet OS images to R36S SD cards through an elevated helper.
         Prioritise, in this order: (1) disk-write target validation: the helper
         must never write to a system, boot, fixed or non-USB/SD/MMC disk, must
         re-identify the chosen card after elevation and refuse when it changed
         or was re-inserted, and must lock and dismount every volume first;
-        (2) the UAC boundary: the Launcher runs unelevated, only the helper
-        whose SHA-256 the Launcher checked on a handle it holds open (and,
-        when signed, its publisher) elevates, and the helper treats its request, image file and
-        pipe input as untrusted; (3) update verification: the SSH signature of
-        the manifest, its version ordering, the installer's size and SHA-256 must
-        be checked before anything runs, and a signed Launcher must also require
-        the installer's Authenticode publisher to match;
+        (2) the UAC boundary: the Launcher runs unelevated, authenticates the
+        packaged helper before elevation even for unsigned packages, and the
+        helper treats its request, image file and pipe input as untrusted;
+        (3) update verification: always require user confirmation, a newer version,
+        a manifest whose SSH signature verifies against the embedded key, and
+        an installer whose size and SHA-256 match it. An Authenticode-signed
+        Launcher also requires a trusted installer from the same publisher.
+        An unsigned packaged Launcher may install updates using the signed
+        manifest and installer checks. Unsigned development builds cannot
+        install updates.
         (4) profile data: installs, updates and uninstalls must never delete or
         mix another profile's saves, favourites or settings, and package paths
         must not escape their folder. Also flag release-workflow changes that
