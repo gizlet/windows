@@ -2,12 +2,14 @@
 """Publishes a Gizlet Launcher for Windows release to R2, behind gizlet.io/assets.
 
     sops decrypt --output-type json devops/secrets/release.enc.yaml |
-        python3 devops/scripts/release.py TAG COMMIT INSTALLERS OUTPUT [--assemble-only]
+        python3 devops/scripts/release.py TAG COMMIT INSTALLERS OUTPUT [--assemble-only] [--unsigned]
 
-INSTALLERS holds GizletSetup-<version>-<arch>.exe, built and Authenticode-signed by the Windows
-job. In order, it:
+INSTALLERS holds GizletSetup-<version>-<arch>.exe built by the Windows job. The Release
+workflow passes --unsigned when that job explicitly reports an unsigned build. In order, this
+script:
 
-1. checks every installer's Authenticode signature and timestamp (osslsigncode);
+1. checks every installer's Authenticode signature and timestamp (osslsigncode), unless --unsigned
+   was passed;
 2. writes update.json, the manifest the Launcher reads: the version, the release notes from
    docs/releases/TAG.{en,zh-CN}.md and each installer's path, size and SHA-256, signed with the
    update key (ssh-keygen -Y sign, namespace gizlet-windows-update) whose public half is
