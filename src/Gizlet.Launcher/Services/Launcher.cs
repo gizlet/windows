@@ -29,6 +29,10 @@ sealed class Launcher
         typeof(Launcher).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
             .Any(a => a.Key == "GizletPackaged" && a.Value == "true");
 
+    public static bool AllowsUnsignedUpdates { get; } =
+        typeof(Launcher).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
+            .Any(a => a.Key == "GizletUnsignedUpdates" && a.Value == "true");
+
     /// <summary>The SHA-256 of the flash helper shipped with this build (<c>-p:GizletHelperSha256</c>), if packaged.</summary>
     public static string? HelperSha256 { get; } =
         typeof(Launcher).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()

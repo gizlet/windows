@@ -16,10 +16,13 @@ public static class InstallerTrust
     /// Launcher is not signed itself.
     /// </param>
     /// <param name="packaged">Whether this Launcher was built by scripts/package.ps1.</param>
-    public static InstallerVerdict Judge(bool? samePublisher, bool packaged) => samePublisher switch
+    /// <param name="allowUnsigned">Whether packaging explicitly enabled manifest-only verification.</param>
+    public static InstallerVerdict Judge(bool? samePublisher, bool packaged, bool allowUnsigned) => samePublisher switch
     {
         true => InstallerVerdict.Install,
         false => InstallerVerdict.WrongPublisher,
-        null => packaged ? InstallerVerdict.Install : InstallerVerdict.DevelopmentBuild,
+        null when !packaged => InstallerVerdict.DevelopmentBuild,
+        null when allowUnsigned => InstallerVerdict.Install,
+        null => InstallerVerdict.WrongPublisher,
     };
 }

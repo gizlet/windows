@@ -151,7 +151,11 @@ jobs:
         run: |
           set -o pipefail
           unsigned=()
-          if [[ "$SIGNED" != true ]]; then unsigned=(--unsigned); fi
+          case "$SIGNED" in
+            true) ;;
+            false) unsigned=(--unsigned) ;;
+            *) echo "Missing build signing status" >&2; exit 1 ;;
+          esac
           sops decrypt --output-type json devops/secrets/release.enc.yaml |
             python3 devops/scripts/release.py "$GITHUB_REF_NAME" "$RELEASE_COMMIT" \
               "$RUNNER_TEMP/installers" "$RUNNER_TEMP/release" "${unsigned[@]}"

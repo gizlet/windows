@@ -81,6 +81,7 @@ $helperSha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $helperExe).Hash.To
 $launcherArgs = @('publish', 'src/Gizlet.Launcher/Gizlet.Launcher.csproj', '--configuration', 'Release', '--runtime', $rid,
     '--self-contained', 'true', "-p:Version=$Version", "-p:Platform=$Arch", '-p:PublishReadyToRun=true', '-p:GizletPackaged=true',
     "-p:GizletHelperSha256=$helperSha256", '--output', $publish)
+if (-not $signLine) { $launcherArgs += '-p:GizletUnsignedUpdates=true' }
 if ($TestUpdateKey) {
     if ($TestUpdateKey -notmatch '^AAAAC3NzaC1lZDI1NTE5[A-Za-z0-9+/]{40,}$') { throw 'TestUpdateKey is not an ssh-ed25519 public key blob' }
     if ($env:GITHUB_WORKFLOW -eq 'Release') { throw 'A release never trusts a test update key' }

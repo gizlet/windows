@@ -95,14 +95,14 @@ sealed class LauncherUpdates
             var installer = await Task.Run(() => checker.DownloadAsync(update, launcher.Layout.Updates, progress));
 
             Set(UpdateState.Verifying);
+            // Hold the verified installer open through process launch.
+            using var locked = new FileStream(installer, FileMode.Open, FileAccess.Read, FileShare.Read);
             var publisher = await Task.Run(() => Authenticode.SamePublisherAsSelf(installer));
-            switch (InstallerTrust.Judge(publisher, Launcher.Packaged))
+            switch (InstallerTrust.Judge(publisher, Launcher.Packaged, Launcher.AllowsUnsignedUpdates))
             {
                 case InstallerVerdict.DevelopmentBuild: throw new GizletException(GizletError.UpdatePublisher, S.UpdateDevBuild);
                 case InstallerVerdict.WrongPublisher: throw new GizletException(GizletError.UpdatePublisher, S.UpdateUnsigned);
             }
-            // The file may not change between the check and the start.
-            using var locked = new FileStream(installer, FileMode.Open, FileAccess.Read, FileShare.Read);
             if (!await UpdateChecker.MatchesAsync(locked, update.Installer)) throw new GizletException(GizletError.UpdateDownloadMismatch, installer);
 
             if (launcher.Flash.Busy)
