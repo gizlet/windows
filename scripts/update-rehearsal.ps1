@@ -1,6 +1,6 @@
 # Rehearses an in-app update end to end on Windows, as the first release's acceptance asks:
 #
-#  1. installs the Old Launcher (signed) for this user, and gives it real data: The Little Prince
+#  1. installs the Old Launcher for this user, and gives it real data: The Little Prince
 #     from the live Store, profiles A and B, a favourite and a save in A, B in Simplified Chinese;
 #  2. starts it against a local update server that has nothing yet, so its first check finds
 #     nothing;
@@ -11,14 +11,16 @@
 #  5. checks that the Launcher was replaced by the New version, opened again on its own, and kept
 #     the installed app, both profiles, the favourite, the save and the settings.
 #
-# Both installers must be signed by the same publisher, trusted on this machine, and built with
-# -TestUpdateKey for the public half of -Key. Screenshots go to -Output.
+# Both installers must be built with -TestUpdateKey for the public half of -Key, and either signed
+# by the same publisher trusted on this machine or, with -Unsigned, both unsigned. Screenshots go
+# to -Output.
 param(
     [Parameter(Mandatory)][string]$Old,
     [Parameter(Mandatory)][string]$New,
     [Parameter(Mandatory)][string]$NewVersion,
     [Parameter(Mandatory)][string]$Key,
-    [Parameter(Mandatory)][string]$Output
+    [Parameter(Mandatory)][string]$Output,
+    [switch]$Unsigned
 )
 $ErrorActionPreference = 'Stop'
 Set-Location (Split-Path -Parent $PSScriptRoot)
@@ -73,13 +75,17 @@ function Snap([IntPtr]$window, [string]$name) {
 }
 
 function Installed-Version { (Get-Item $exe).VersionInfo.ProductVersion }
+function Check-Signature([string]$what) {
+    $status = (Get-AuthenticodeSignature $exe).Status
+    if ($Unsigned) { Check ($status -eq 'NotSigned') "$what is unsigned" } else { Check ($status -eq 'Valid') "$what is validly signed" }
+}
 
 try {
     # 1. The old version, with data.
     $p = Start-Process -FilePath $Old -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' -Wait -PassThru
     Check ($p.ExitCode -eq 0) "installs $(Split-Path -Leaf $Old)"
     $oldVersion = Installed-Version
-    Check ((Get-AuthenticodeSignature $exe).Status -eq 'Valid') "the installed Launcher $oldVersion is validly signed"
+    Check-Signature "the installed Launcher $oldVersion"
     dotnet run --project tools/Gizlet.StoreCheck --configuration Release -- --query prince --id io.gizlet.littleprince --prefix $prefix --install-only
     Check ($LASTEXITCODE -eq 0) 'installs The Little Prince from the Store into the Launcher''s data, with profiles A and B'
     $before = @{
@@ -146,7 +152,7 @@ try {
     Check ($null -ne $reopened) 'the installer opens the Launcher again'
     $newInstalled = Installed-Version
     Check ($newInstalled -like "$NewVersion*") "the installed Launcher is now $newInstalled"
-    Check ((Get-AuthenticodeSignature $exe).Status -eq 'Valid') 'and validly signed'
+    Check-Signature 'the new Launcher'
     $window = Window $reopened.Id
     Start-Sleep -Seconds 8
     Check ($null -ne (Find $window 'The Little Prince')) 'the reopened Launcher lists The Little Prince among its apps'

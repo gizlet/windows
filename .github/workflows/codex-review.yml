@@ -56,8 +56,9 @@ jobs:
         (2) the UAC boundary: the Launcher runs unelevated, only the signed
         helper elevates, and the helper treats its request, image file and
         pipe input as untrusted; (3) update verification: the SSH signature of
-        the manifest, its version ordering, the installer's size, SHA-256 and
-        Authenticode publisher must all be checked before anything runs;
+        the manifest, its version ordering, the installer's size and SHA-256 must
+        be checked before anything runs, and a signed Launcher must also require
+        the installer's Authenticode publisher to match;
         (4) profile data: installs, updates and uninstalls must never delete or
         mix another profile's saves, favourites or settings, and package paths
         must not escape their folder. Also flag release-workflow changes that

@@ -19,7 +19,7 @@ permissions:
 jobs:
   store:
     name: Search, install, open and save (Windows x64)
-    runs-on: ${{ fromJSON(vars.RUNNERS || '{}')['windows-x64'] || 'windows-2025' }}
+    runs-on: windows-2025
     timeout-minutes: 30
     env:
       DOTNET_CLI_TELEMETRY_OPTOUT: '1'

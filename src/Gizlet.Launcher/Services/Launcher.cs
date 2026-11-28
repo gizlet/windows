@@ -24,6 +24,11 @@ sealed class Launcher
             ? $"ssh-ed25519 {test}"
             : UpdateManifest.TrustedKey;
 
+    /// <summary>Whether this build was made by scripts/package.ps1 (<c>-p:GizletPackaged=true</c>), not a development build.</summary>
+    public static bool Packaged { get; } =
+        typeof(Launcher).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
+            .Any(a => a.Key == "GizletPackaged" && a.Value == "true");
+
     public Launcher()
     {
         Layout = DataLayout.Default;

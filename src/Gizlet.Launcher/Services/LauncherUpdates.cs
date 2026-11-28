@@ -12,9 +12,9 @@ public enum UpdateState { Idle, Checking, Available, Downloading, Verifying, Wai
 /// <summary>
 /// Updates of the Launcher itself. It checks the signed manifest at start and every 120 seconds
 /// while it runs; a newer version is offered, and installed only when the user agrees, after the
-/// manifest's signature, the installer's size and SHA-256 and its Authenticode publisher (the same
-/// as this program's) check out. While a card is being written the install waits. Any failure
-/// leaves this version running.
+/// manifest's signature and the installer's size and SHA-256 check out, and, when this program is
+/// signed, the installer's Authenticode publisher is the same (<see cref="InstallerTrust"/>). While
+/// a card is being written the install waits. Any failure leaves this version running.
 /// </summary>
 sealed class LauncherUpdates
 {
@@ -96,8 +96,11 @@ sealed class LauncherUpdates
 
             Set(UpdateState.Verifying);
             var publisher = await Task.Run(() => Authenticode.SamePublisherAsSelf(installer));
-            if (publisher is null) throw new GizletException(GizletError.UpdatePublisher, S.UpdateDevBuild);
-            if (publisher is false) throw new GizletException(GizletError.UpdatePublisher, S.UpdateUnsigned);
+            switch (InstallerTrust.Judge(publisher, Launcher.Packaged))
+            {
+                case InstallerVerdict.DevelopmentBuild: throw new GizletException(GizletError.UpdatePublisher, S.UpdateDevBuild);
+                case InstallerVerdict.WrongPublisher: throw new GizletException(GizletError.UpdatePublisher, S.UpdateUnsigned);
+            }
             // The file may not change between the check and the start.
             using var locked = new FileStream(installer, FileMode.Open, FileAccess.Read, FileShare.Read);
             if (!await UpdateChecker.MatchesAsync(locked, update.Installer)) throw new GizletException(GizletError.UpdateDownloadMismatch, installer);
