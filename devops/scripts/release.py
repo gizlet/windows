@@ -2,12 +2,14 @@
 """Publishes a Gizlet Launcher for Windows release to R2, behind gizlet.io/assets.
 
     sops decrypt --output-type json devops/secrets/release.enc.yaml |
-        python3 devops/scripts/release.py TAG COMMIT INSTALLERS OUTPUT [--assemble-only]
+        python3 devops/scripts/release.py TAG COMMIT INSTALLERS OUTPUT [--assemble-only] [--unsigned]
 
-INSTALLERS holds GizletSetup-<version>-<arch>.exe, built and Authenticode-signed by the Windows
-job. In order, it:
+INSTALLERS holds GizletSetup-<version>-<arch>.exe built by the Windows job. The Release
+workflow passes --unsigned when that job explicitly reports an unsigned build. In order, this
+script:
 
-1. checks every installer's Authenticode signature and timestamp (osslsigncode);
+1. checks every installer's Authenticode signature and timestamp (osslsigncode), unless --unsigned
+   was passed;
 2. writes update.json, the manifest the Launcher reads: the version, the release notes from
    docs/releases/TAG.{en,zh-CN}.md and each installer's path, size and SHA-256, signed with the
    update key (ssh-keygen -Y sign, namespace gizlet-windows-update) whose public half is
@@ -74,14 +76,14 @@ def notes(tag):
     return found
 
 
-def assemble(tag, commit, installers, output, signing_key, check_signatures=True):
+def assemble(tag, commit, installers, output, signing_key, authenticode=True):
     version = tag[1:]
     entries = {}
     for arch in ARCHES:
         path = installers / f"GizletSetup-{version}-{arch}.exe"
         if not path.exists():
             continue
-        if check_signatures:
+        if authenticode:
             check_authenticode(path)
         entries[arch] = {"path": path.name, "sha256": sha256(path), "size": path.stat().st_size}
     if "x64" not in entries:
@@ -199,15 +201,14 @@ def main():
     parser.add_argument("installers", type=Path)
     parser.add_argument("output", type=Path)
     parser.add_argument("--assemble-only", action="store_true")
-    parser.add_argument("--skip-authenticode", action="store_true", help="local testing of unsigned builds, with --assemble-only")
+    parser.add_argument("--unsigned", action="store_true",
+                        help="the installers are not Authenticode-signed (no code-signing certificate yet)")
     args = parser.parse_args()
     if not re.fullmatch(f"v{VERSION}", args.tag) or not re.fullmatch(r"[0-9a-f]{40}", args.commit):
         parser.error("expected vMAJOR.MINOR.PATCH and a full commit SHA")
-    if args.skip_authenticode and not args.assemble_only:
-        parser.error("--skip-authenticode needs --assemble-only")
     credentials = json.load(sys.stdin)
     manifest = assemble(args.tag, args.commit, args.installers, args.output, credentials["UPDATE_SIGNING_KEY"],
-                        check_signatures=not args.skip_authenticode)
+                        authenticode=not args.unsigned)
     if not args.assemble_only:
         publish(args.tag, manifest, args.installers, args.output, credentials)
 

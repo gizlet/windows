@@ -53,8 +53,8 @@ jobs:
       !cancelled() && (
         needs.start.outputs.run == 'true'
         || (needs.start.result == 'skipped' && github.event_name != 'issue_comment'))
-    # The RUNNERS organization variable maps platforms to self-hosted runners.
-    runs-on: ${{ fromJSON(vars.RUNNERS || '{}')['windows-x64'] || 'windows-2025' }}
+    # GitHub-hosted: a fresh Windows VM for every run.
+    runs-on: windows-2025
     timeout-minutes: 60
     # The job runs pull-request code: read-only token and no secrets.
     permissions:

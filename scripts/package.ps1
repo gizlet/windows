@@ -37,31 +37,6 @@ function Invoke([string]$file, [string[]]$arguments) {
     if ($LASTEXITCODE -ne 0) { throw "$file exited with $LASTEXITCODE" }
 }
 
-$launcherArgs = @('publish', 'src/Gizlet.Launcher/Gizlet.Launcher.csproj', '--configuration', 'Release', '--runtime', $rid,
-    '--self-contained', 'true', "-p:Version=$Version", "-p:Platform=$Arch", '-p:PublishReadyToRun=true', '--output', $publish)
-if ($TestUpdateKey) {
-    if ($TestUpdateKey -notmatch '^AAAAC3NzaC1lZDI1NTE5[A-Za-z0-9+/]{40,}$') { throw 'TestUpdateKey is not an ssh-ed25519 public key blob' }
-    if ($env:GITHUB_WORKFLOW -eq 'Release') { throw 'A release never trusts a test update key' }
-    Write-Warning 'Rehearsal build: trusting a test update key'
-    $launcherArgs += "-p:GizletTestUpdateKey=$TestUpdateKey"
-}
-Invoke dotnet $launcherArgs
-
-# The helper runs elevated from this user-writable folder, so it is one native executable with
-# nothing beside it to replace, and only System32 DLLs (Windows' KnownDLLs and API sets) load into it.
-$helperOut = Join-Path $output "publish/helper-$rid"
-Remove-Item -Recurse -Force $helperOut -ErrorAction SilentlyContinue
-Invoke dotnet @('publish', 'src/Gizlet.FlashHelper/Gizlet.FlashHelper.csproj', '--configuration', 'Release', '--runtime', $rid,
-    "-p:Version=$Version", '--output', $helperOut)
-Copy-Item -LiteralPath (Join-Path $helperOut 'Gizlet.FlashHelper.exe') -Destination $publish -Force
-foreach ($stale in 'Gizlet.FlashHelper.dll', 'Gizlet.FlashHelper.deps.json', 'Gizlet.FlashHelper.runtimeconfig.json') {
-    if (Test-Path (Join-Path $publish $stale)) { throw "$stale must not be shipped beside the helper" }
-}
-& (Join-Path $PSScriptRoot 'check-imports.ps1') (Join-Path $publish 'Gizlet.FlashHelper.exe')
-foreach ($exe in 'Gizlet.Launcher.exe', 'Gizlet.FlashHelper.exe') {
-    if (-not (Test-Path (Join-Path $publish $exe))) { throw "$exe was not published" }
-}
-
 # --- signing
 $signArgs = $env:GIZLET_SIGNTOOL_ARGS
 $signtool = $null
@@ -90,8 +65,44 @@ function Assert-Signed([string]$file) {
     Write-Host "Signed: $(Split-Path -Leaf $file) by $($signature.SignerCertificate.Subject)"
 }
 
+# The helper runs elevated from this user-writable folder, so it is one native executable with
+# nothing beside it to replace, and only System32 DLLs (Windows' KnownDLLs and API sets) load into it.
+# It is built (and signed) first: the Launcher carries its SHA-256 and elevates nothing else.
+$helperOut = Join-Path $output "publish/helper-$rid"
+Remove-Item -Recurse -Force $helperOut -ErrorAction SilentlyContinue
+Invoke dotnet @('publish', 'src/Gizlet.FlashHelper/Gizlet.FlashHelper.csproj', '--configuration', 'Release', '--runtime', $rid,
+    "-p:Version=$Version", '--output', $helperOut)
+$helperExe = Join-Path $helperOut 'Gizlet.FlashHelper.exe'
+if (-not (Test-Path $helperExe)) { throw 'Gizlet.FlashHelper.exe was not published' }
+& (Join-Path $PSScriptRoot 'check-imports.ps1') $helperExe
+Sign $helperExe
+$helperSha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $helperExe).Hash.ToLowerInvariant()
+
+$launcherArgs = @('publish', 'src/Gizlet.Launcher/Gizlet.Launcher.csproj', '--configuration', 'Release', '--runtime', $rid,
+    '--self-contained', 'true', "-p:Version=$Version", "-p:Platform=$Arch", '-p:PublishReadyToRun=true', '-p:GizletPackaged=true',
+    "-p:GizletHelperSha256=$helperSha256", '--output', $publish)
+if (-not $signLine) { $launcherArgs += '-p:GizletUnsignedUpdates=true' }
+if ($TestUpdateKey) {
+    if ($TestUpdateKey -notmatch '^AAAAC3NzaC1lZDI1NTE5[A-Za-z0-9+/]{40,}$') { throw 'TestUpdateKey is not an ssh-ed25519 public key blob' }
+    if ($env:GITHUB_WORKFLOW -eq 'Release') { throw 'A release never trusts a test update key' }
+    Write-Warning 'Rehearsal build: trusting a test update key'
+    $launcherArgs += "-p:GizletTestUpdateKey=$TestUpdateKey"
+}
+Invoke dotnet $launcherArgs
+
+Copy-Item -LiteralPath $helperExe -Destination $publish -Force
+foreach ($stale in 'Gizlet.FlashHelper.dll', 'Gizlet.FlashHelper.deps.json', 'Gizlet.FlashHelper.runtimeconfig.json') {
+    if (Test-Path (Join-Path $publish $stale)) { throw "$stale must not be shipped beside the helper" }
+}
+foreach ($exe in 'Gizlet.Launcher.exe', 'Gizlet.FlashHelper.exe') {
+    if (-not (Test-Path (Join-Path $publish $exe))) { throw "$exe was not published" }
+}
+if ((Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $publish 'Gizlet.FlashHelper.exe')).Hash.ToLowerInvariant() -ne $helperSha256) {
+    throw 'The shipped helper is not the one the Launcher was built for'
+}
+Write-Host "Helper SHA-256: $helperSha256"
+
 Sign (Join-Path $publish 'Gizlet.Launcher.exe')
-Sign (Join-Path $publish 'Gizlet.FlashHelper.exe')
 
 # --- installer
 $iscc = @(

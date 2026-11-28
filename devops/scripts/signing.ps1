@@ -4,7 +4,8 @@
 #   CODESIGN_PFX_BASE64, CODESIGN_PFX_PASSWORD      a PKCS#12 code-signing certificate, or
 #   ARTIFACT_SIGNING_ENDPOINT, ARTIFACT_SIGNING_ACCOUNT, ARTIFACT_SIGNING_PROFILE,
 #   AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_CLIENT_SECRET   Azure Artifact (Trusted) Signing.
-# Fails when neither is configured: a release is never published unsigned.
+# With neither, it warns and exports nothing: the release is built and published unsigned, trusted
+# through the signed update manifest alone, until a code-signing certificate is added.
 $ErrorActionPreference = 'Stop'
 $temp = $env:RUNNER_TEMP
 function Export([string]$name, [string]$value) {
@@ -48,4 +49,4 @@ if ($env:ARTIFACT_SIGNING_ENDPOINT) {
     return
 }
 
-throw 'No code-signing credentials: add CODESIGN_PFX_* or ARTIFACT_SIGNING_* and AZURE_* to devops/secrets/release.enc.yaml'
+Write-Host '::warning::No code-signing credentials in devops/secrets/release.enc.yaml: this release is not Authenticode-signed'

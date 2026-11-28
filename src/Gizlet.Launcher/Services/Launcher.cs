@@ -24,6 +24,20 @@ sealed class Launcher
             ? $"ssh-ed25519 {test}"
             : UpdateManifest.TrustedKey;
 
+    /// <summary>Whether this build was made by scripts/package.ps1 (<c>-p:GizletPackaged=true</c>), not a development build.</summary>
+    public static bool Packaged { get; } =
+        typeof(Launcher).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
+            .Any(a => a.Key == "GizletPackaged" && a.Value == "true");
+
+    public static bool AllowsUnsignedUpdates { get; } =
+        typeof(Launcher).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
+            .Any(a => a.Key == "GizletUnsignedUpdates" && a.Value == "true");
+
+    /// <summary>The SHA-256 of the flash helper shipped with this build (<c>-p:GizletHelperSha256</c>), if packaged.</summary>
+    public static string? HelperSha256 { get; } =
+        typeof(Launcher).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
+            .FirstOrDefault(a => a.Key == "GizletHelperSha256")?.Value is { Length: > 0 } sha ? sha : null;
+
     public Launcher()
     {
         Layout = DataLayout.Default;

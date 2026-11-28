@@ -2,9 +2,10 @@ name: Update rehearsal
 
 # The in-app update, end to end, on a fresh Windows runner (scripts/update-rehearsal.ps1): an old
 # Launcher, running with real data, finds a newly published version in its next 120-second poll,
-# downloads and checks it, installs it and opens again with everything kept. Signed with a
-# throwaway Authenticode certificate trusted only on this runner, and a throwaway update key built
-# into these test builds only. No release credentials. Runs on main, weekly and on demand.
+# downloads and checks it, installs it and opens again with everything kept. Twice: unsigned, as
+# releases are until a code-signing certificate exists, and signed with a throwaway Authenticode
+# certificate trusted only on this runner. A throwaway update key is built into these test builds
+# only. No release credentials. Runs on main, weekly and on demand.
 
 on:
   push:
@@ -18,7 +19,11 @@ permissions:
 
 jobs:
   rehearse:
-    name: Old Launcher updates itself (Windows x64)
+    name: Old Launcher updates itself (Windows x64, ${{ matrix.authenticode }})
+    strategy:
+      fail-fast: false
+      matrix:
+        authenticode: [unsigned, signed]
     runs-on: windows-2025
     timeout-minutes: 60
     env:
@@ -31,11 +36,22 @@ jobs:
       - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         with:
           global-json-file: global.json
-      - name: Throwaway signing certificate and update key
+      - name: Throwaway update key
         shell: pwsh
         run: |
           $dir = Join-Path $env:RUNNER_TEMP 'rehearsal-keys'
           New-Item -ItemType Directory -Force $dir | Out-Null
+          # No passphrase: PowerShell 7 passes '' as an empty argument.
+          ssh-keygen -q -t ed25519 -N '' -C rehearsal -f "$dir/update"
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path "$dir/update")) { throw 'ssh-keygen failed' }
+          $blob = (Get-Content "$dir/update.pub").Split(' ')[1]
+          Add-Content $env:GITHUB_ENV "REHEARSAL_KEY=$dir\update"
+          Add-Content $env:GITHUB_ENV "REHEARSAL_BLOB=$blob"
+      - name: Throwaway signing certificate
+        if: matrix.authenticode == 'signed'
+        shell: pwsh
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP 'rehearsal-keys'
           $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject 'CN=Gizlet Update Rehearsal' -CertStoreLocation Cert:\CurrentUser\My -NotAfter (Get-Date).AddDays(2)
           $password = [guid]::NewGuid().ToString('N')
           Write-Host "::add-mask::$password"
@@ -44,13 +60,7 @@ jobs:
           # Trusted on this ephemeral runner only, as a real publisher's chain is everywhere.
           Import-Certificate -FilePath "$dir/sign.cer" -CertStoreLocation Cert:\LocalMachine\Root | Out-Null
           Import-Certificate -FilePath "$dir/sign.cer" -CertStoreLocation Cert:\LocalMachine\TrustedPublisher | Out-Null
-          # No passphrase: PowerShell 7 passes '' as an empty argument.
-          ssh-keygen -q -t ed25519 -N '' -C rehearsal -f "$dir/update"
-          if ($LASTEXITCODE -ne 0 -or -not (Test-Path "$dir/update")) { throw 'ssh-keygen failed' }
-          $blob = (Get-Content "$dir/update.pub").Split(' ')[1]
           Add-Content $env:GITHUB_ENV "GIZLET_SIGNTOOL_ARGS=/f `"$dir\sign.pfx`" /p $password"
-          Add-Content $env:GITHUB_ENV "REHEARSAL_KEY=$dir\update"
-          Add-Content $env:GITHUB_ENV "REHEARSAL_BLOB=$blob"
       - name: Build the old and the new version
         shell: pwsh
         run: |
@@ -61,10 +71,12 @@ jobs:
           Add-Content $env:GITHUB_ENV "NEW_INSTALLER=$new"
       - name: Rehearse the update
         shell: pwsh
-        run: ./scripts/update-rehearsal.ps1 -Old $env:OLD_INSTALLER -New $env:NEW_INSTALLER -NewVersion 0.0.2 -Key $env:REHEARSAL_KEY -Output "$env:RUNNER_TEMP/screens"
+        env:
+          AUTHENTICODE: ${{ matrix.authenticode }}
+        run: ./scripts/update-rehearsal.ps1 -Old $env:OLD_INSTALLER -New $env:NEW_INSTALLER -NewVersion 0.0.2 -Key $env:REHEARSAL_KEY -Output "$env:RUNNER_TEMP/screens" -Unsigned:($env:AUTHENTICODE -eq 'unsigned')
       - if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: update-rehearsal
+          name: update-rehearsal-${{ matrix.authenticode }}
           path: ${{ runner.temp }}/screens
           if-no-files-found: ignore

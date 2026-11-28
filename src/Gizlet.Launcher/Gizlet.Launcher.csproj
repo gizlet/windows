@@ -31,6 +31,16 @@
   <ItemGroup Condition="'$(GizletTestUpdateKey)' != ''">
     <AssemblyMetadata Include="GizletTestUpdateKey" Value="$(GizletTestUpdateKey)" />
   </ItemGroup>
+  <ItemGroup Condition="'$(GizletPackaged)' == 'true'">
+    <AssemblyMetadata Include="GizletPackaged" Value="true" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(GizletUnsignedUpdates)' == 'true'">
+    <AssemblyMetadata Include="GizletUnsignedUpdates" Value="true" />
+  </ItemGroup>
+  <!-- Set by scripts/package.ps1: the SHA-256 of the flash helper it ships (see HelperTrust). -->
+  <ItemGroup Condition="'$(GizletHelperSha256)' != ''">
+    <AssemblyMetadata Include="GizletHelperSha256" Value="$(GizletHelperSha256)" />
+  </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../Gizlet.Windows/Gizlet.Windows.csproj" />
   </ItemGroup>

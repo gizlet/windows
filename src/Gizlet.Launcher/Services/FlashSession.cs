@@ -13,8 +13,9 @@ namespace Gizlet.Launcher.Services;
 
 /// <summary>
 /// Writing a card from the unelevated Launcher: lists the card readers, prepares the image, then
-/// starts the signed helper through UAC with what the user confirmed and follows its progress over
-/// a named pipe. The helper decides for itself whether the write may go ahead.
+/// starts the helper through UAC, once it is the one this build shipped (<see cref="HelperTrust"/>),
+/// with what the user confirmed and follows its progress over a named pipe. The helper decides for
+/// itself whether the write may go ahead.
 /// </summary>
 sealed class FlashSession(Launcher launcher)
 {
@@ -50,7 +51,12 @@ sealed class FlashSession(Launcher launcher)
         {
             var helper = Path.Combine(AppContext.BaseDirectory, HelperName);
             if (!File.Exists(helper)) throw new FileNotFoundException(helper);
-            if (Authenticode.SamePublisherAsSelf(helper) is false) throw new InvalidOperationException(S.HelperUntrusted);
+            // Held open, denying writes, renames and deletes, until the helper has connected: the
+            // file checked is the file elevated.
+            using var pinned = new FileStream(helper, FileMode.Open, FileAccess.Read, FileShare.Read);
+            var actual = Convert.ToHexStringLower(await SHA256.HashDataAsync(pinned, cancellationToken));
+            var publisher = await Task.Run(() => Authenticode.SamePublisherAsSelf(helper), cancellationToken);
+            if (!HelperTrust.Allows(publisher, Launcher.HelperSha256, actual, Launcher.Packaged)) throw new InvalidOperationException(S.HelperUntrusted);
 
             var pipeName = "gizlet-flash-" + Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(12));
             var request = new FlashRequest
