@@ -167,7 +167,7 @@ static class S
     public static string FlashDone => T("Done. Eject the card, put it in the R36S and switch it on.", "完成。弹出卡，插进 R36S 开机。");
     public static string FlashFailed(string why) => T($"The card was not written: {why}", $"写卡失败：{why}");
     public static string NothingWritten => T("Nothing was written.", "未写入任何内容。");
-    public static string HelperUntrusted => T("the card writer is not signed by Gizlet", "写卡程序没有 Gizlet 的签名");
+    public static string HelperUntrusted => T("the card writer is not the one this Launcher was installed with", "写卡程序不是随这个启动器安装的那一个");
 
     public static string Size(long bytes) =>
         bytes >= 1_000_000_000 ? string.Create(CultureInfo.CurrentCulture, $"{bytes / 1e9:0.#} GB") : string.Create(CultureInfo.CurrentCulture, $"{bytes / 1e6:0} MB");

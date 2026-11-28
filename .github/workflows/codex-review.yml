@@ -53,8 +53,9 @@ jobs:
         must never write to a system, boot, fixed or non-USB/SD/MMC disk, must
         re-identify the chosen card after elevation and refuse when it changed
         or was re-inserted, and must lock and dismount every volume first;
-        (2) the UAC boundary: the Launcher runs unelevated, only the signed
-        helper elevates, and the helper treats its request, image file and
+        (2) the UAC boundary: the Launcher runs unelevated, only the helper
+        whose SHA-256 the Launcher checked on a handle it holds open (and,
+        when signed, its publisher) elevates, and the helper treats its request, image file and
         pipe input as untrusted; (3) update verification: the SSH signature of
         the manifest, its version ordering, the installer's size and SHA-256 must
         be checked before anything runs, and a signed Launcher must also require
